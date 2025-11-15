@@ -13,7 +13,7 @@ public class Usuario
     public RolUsuario Rol { get; set; }
 
     public int? EmpresaId { get; set; }
-    //public Empresa? Empresa { get; set; }
+    public Empresa? Empresa { get; set; }
 
     // NUEVOS CAMPOS PARA TRABAJADOR
     public Departamento? Departamento { get; set; }      // De qué área es
