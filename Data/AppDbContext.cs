@@ -12,6 +12,9 @@ public class AppDbContext : DbContext
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<Capacidad> Capacidades => Set<Capacidad>();
     public DbSet<UsuarioCapacidad> UsuarioCapacidades => Set<UsuarioCapacidad>();
+    
+    public DbSet<Tarea> Tareas { get; set; } = null!;
+    public DbSet<TareaCapacidadRequerida> TareasCapacidadesRequeridas { get; set; } = null!;
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
