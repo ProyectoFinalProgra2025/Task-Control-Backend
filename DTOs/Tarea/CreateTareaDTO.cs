@@ -20,9 +20,5 @@ namespace TaskControlBackend.DTOs.Tarea
 
         // Nombres de capacidades requeridas (ej: "Buen diseñador")
         public List<string> CapacidadesRequeridas { get; set; } = new();
-
-        public int? AsignadoAUsuarioId { get; set; }
-
-        public bool AsignacionAutomatica { get; set; } = false;
     }
 }
