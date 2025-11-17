@@ -46,6 +46,46 @@ namespace TaskControlBackend.Controllers
                 return id;
             return null;
         }
+        [HttpGet("{id:int}/trabajadores-ids")]
+        [Authorize]
+        public async Task<IActionResult> GetTrabajadoresIds([FromRoute] int id)
+        {
+            // 1. Verificar que la empresa exista
+            var empresa = await _db.Empresas
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e => e.Id == id);
+
+            if (empresa is null)
+                return NotFound(new { success = false, message = "Empresa no encontrada" });
+
+            // 2. Autorización (mismo criterio que en Estadisticas)
+            if (!IsAdminGeneral())
+            {
+                if (!IsAdminEmpresa())
+                    return Forbid();
+
+                var empresaToken = EmpresaIdClaim();
+                if (!empresaToken.HasValue || empresaToken.Value != id)
+                    return Forbid();
+            }
+
+            // 3. Obtener IDs de todos los trabajadores (rol Usuario) de esa empresa
+            var trabajadorIds = await _db.Usuarios
+                .AsNoTracking()
+                .Where(u => u.EmpresaId == id && u.Rol == RolUsuario.Usuario)
+                .Select(u => u.Id)
+                .ToListAsync();
+
+            return Ok(new
+            {
+                success = true,
+                data = new
+                {
+                    EmpresaId = id,
+                    TrabajadoresIds = trabajadorIds
+                }
+            });
+        }
 
         [HttpGet]
         [AuthorizeRole(RolUsuario.AdminGeneral)]

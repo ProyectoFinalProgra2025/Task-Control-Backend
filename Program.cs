@@ -19,7 +19,21 @@ builder.Services.AddScoped<ITokenService, TokenService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IEmpresaService, EmpresaService>();
 builder.Services.AddScoped<IUsuarioService, UsuarioService>();
+builder.Services.AddScoped<ITareaService, TareaService>();
 builder.Services.AddControllers();
+
+// 🔹 CORS PARA FRONTEND EN localhost:5173
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("DevCors", policy =>
+    {
+        policy
+            .WithOrigins("http://localhost:5173", "https://localhost:5173", "https://taskcontrol.work")
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
 
 // JWT
 var key = Encoding.UTF8.GetBytes(config["JwtSettings:SecretKey"]!);
@@ -42,7 +56,6 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     });
 
 builder.Services.AddAuthorization();
-builder.Services.AddScoped<ITareaService, TareaService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
@@ -75,8 +88,12 @@ app.UseSwaggerUI();
 // Redirigir raíz a Swagger
 app.MapGet("/", () => Results.Redirect("/swagger"));
 
-// Middlewares
+// 🔹 Middlewares (ORDEN IMPORTANTE)
 app.UseHttpsRedirection();
+
+// 👉 CORS DEBE IR ANTES DE AUTH
+app.UseCors("DevCors");
+
 app.UseAuthentication();
 app.UseAuthorization();
 
