@@ -146,6 +146,35 @@ namespace TaskControlBackend.Controllers
 
             return Ok(new { success = true, message = "Tarea aceptada" });
         }
+        
+        // GET /api/tareas/mis
+// Solo para Usuario (trabajador) → devuelve las tareas asignadas a él mismo
+        [HttpGet("mis")]
+        public async Task<IActionResult> MisTareas(
+            [FromQuery] EstadoTarea? estado,
+            [FromQuery] PrioridadTarea? prioridad,
+            [FromQuery] Departamento? departamento)
+        {
+            var rol = Rol();
+            if (rol != RolUsuario.Usuario)
+                return Forbid();
+
+            var empresaId = EmpresaIdClaim();
+            if (empresaId is null)
+                return BadRequest(new { success = false, message = "EmpresaId no encontrado en el token" });
+
+            var list = await _svc.ListAsync(
+                empresaId.Value,
+                rol,
+                UserId(),
+                estado,
+                prioridad,
+                departamento,
+                asignadoAUsuarioId: null   // se ignora en el servicio cuando es Usuario
+            );
+
+            return Ok(new { success = true, data = list });
+        }
 
         // PUT /api/tareas/{id}/finalizar - usuario finaliza tarea
         [HttpPut("{id:int}/finalizar")]
