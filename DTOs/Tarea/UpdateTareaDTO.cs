@@ -1,0 +1,23 @@
+using System.ComponentModel.DataAnnotations;
+using TaskControlBackend.Models.Enums;
+
+namespace TaskControlBackend.DTOs.Tarea
+{
+    public class UpdateTareaDTO
+    {
+        [Required]
+        public string Titulo { get; set; } = null!;
+
+        [Required]
+        public string Descripcion { get; set; } = null!;
+
+        [Required]
+        public PrioridadTarea Prioridad { get; set; } = PrioridadTarea.Medium;
+
+        public DateTime? DueDate { get; set; }
+
+        public Departamento? Departamento { get; set; }
+
+        public List<string> CapacidadesRequeridas { get; set; } = new();
+    }
+}

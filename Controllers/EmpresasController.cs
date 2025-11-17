@@ -25,7 +25,6 @@ namespace TaskControlBackend.Controllers
             _svc = svc;
         }
 
-        // Helper para verificar rol AdminGeneral
         private bool IsAdminGeneral() =>
             string.Equals(
                 User.FindFirstValue(ClaimTypes.Role),
@@ -33,7 +32,6 @@ namespace TaskControlBackend.Controllers
                 StringComparison.Ordinal
             );
 
-        // Helper para verificar rol AdminEmpresa
         private bool IsAdminEmpresa() =>
             string.Equals(
                 User.FindFirstValue(ClaimTypes.Role),
@@ -41,7 +39,6 @@ namespace TaskControlBackend.Controllers
                 StringComparison.Ordinal
             );
 
-        // Helper para obtener empresaId desde el token
         private int? EmpresaIdClaim()
         {
             var v = User.FindFirst("empresaId")?.Value;
@@ -91,8 +88,6 @@ namespace TaskControlBackend.Controllers
         }
 
         // GET /api/empresas/{id}/estadisticas
-        // AdminGeneral: puede ver todas
-        // AdminEmpresa: solo su propia empresa
         [HttpGet("{id:int}/estadisticas")]
         [Authorize]
         public async Task<IActionResult> Estadisticas([FromRoute] int id)
@@ -125,19 +120,52 @@ namespace TaskControlBackend.Controllers
                                  u.Rol == RolUsuario.Usuario &&
                                  u.IsActive);
 
-            // Las estadísticas de tareas quedan en 0 por ahora
+            // ============================
+            // NUEVAS ESTADÍSTICAS DE TAREAS
+            // ============================
+
+            var totalTareas = await _db.Tareas
+                .CountAsync(t => t.EmpresaId == id && t.IsActive);
+
+            var tareasPendientes = await _db.Tareas
+                .CountAsync(t => t.EmpresaId == id &&
+                                 t.Estado == EstadoTarea.Pendiente &&
+                                 t.IsActive);
+
+            var tareasAsignadas = await _db.Tareas
+                .CountAsync(t => t.EmpresaId == id &&
+                                 t.Estado == EstadoTarea.Asignada &&
+                                 t.IsActive);
+
+            var tareasAceptadas = await _db.Tareas
+                .CountAsync(t => t.EmpresaId == id &&
+                                 t.Estado == EstadoTarea.Aceptada &&
+                                 t.IsActive);
+
+            var tareasFinalizadas = await _db.Tareas
+                .CountAsync(t => t.EmpresaId == id &&
+                                 t.Estado == EstadoTarea.Finalizada &&
+                                 t.IsActive);
+
+            var tareasCanceladas = await _db.Tareas
+                .CountAsync(t => t.EmpresaId == id &&
+                                 t.Estado == EstadoTarea.Cancelada &&
+                                 t.IsActive);
+
             var dto = new EmpresaEstadisticasDTO
             {
                 EmpresaId = id,
                 NombreEmpresa = empresa.Nombre,
                 TotalTrabajadores = totalTrabajadores,
                 TrabajadoresActivos = trabajadoresActivos,
-                TotalTareas = 0,
-                TareasPendientes = 0,
-                TareasAsignadas = 0,
-                TareasAceptadas = 0,
-                TareasFinalizadas = 0,
-                TareasCanceladas = 0
+
+                // nuevas estadísticas
+                TotalTareas = totalTareas,
+                TareasPendientes = tareasPendientes,
+                TareasAsignadas = tareasAsignadas,
+                TareasAceptadas = tareasAceptadas,
+                TareasFinalizadas = tareasFinalizadas,
+                TareasCanceladas = tareasCanceladas
             };
 
             return Ok(new { success = true, data = dto });
