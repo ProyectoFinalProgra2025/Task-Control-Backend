@@ -12,8 +12,8 @@ using TaskControlBackend.Data;
 namespace TaskControlBackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251116205712_migration2")]
-    partial class migration2
+    [Migration("20251117033951_Initial")]
+    partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
