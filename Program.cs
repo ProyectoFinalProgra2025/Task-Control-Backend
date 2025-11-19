@@ -22,13 +22,15 @@ builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<ITareaService, TareaService>();
 builder.Services.AddControllers();
 
-// 🔹 CORS PARA FRONTEND EN localhost:5173
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DevCors", policy =>
     {
         policy
-            .WithOrigins("http://localhost:5173", "https://localhost:5173", "https://taskcontrol.work")
+            .SetIsOriginAllowed(origin => 
+                origin.StartsWith("http://localhost") || 
+                origin.StartsWith("https://localhost") ||
+                origin == "https://taskcontrol.work")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
