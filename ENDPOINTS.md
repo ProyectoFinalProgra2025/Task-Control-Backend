@@ -12,7 +12,8 @@
 ### Ruta operativa recomendada
 
 1. **Registro y aprobación**: un representante crea la empresa vía POST /api/empresas/registro; un AdminGlobal lista (GET /api/empresas) y aprueba o rechaza (PUT .../acciones/aprobar|rechazar).
-2. **Autenticación**: los usuarios usan POST /api/auth/login para obtener ccessToken + efreshToken y POST /api/auth/refresh para rotarlos sin volver a exponer credenciales.
+2. **Autenticación**: los usuarios usan POST /api/auth/login para obtener ccessToken + 
+efreshToken y POST /api/auth/refresh para rotarlos sin volver a exponer credenciales.
 3. **Configuración de la empresa**: el AdminEmpresa propio mantiene su ficha (GET/PUT /api/empresas/{empresaId}), crea sucursales (/sucursales) y gestiona usuarios (/usuarios) asignando roles, habilidades y contraseñas.
 4. **Planeación de trabajo**: supervisores generan tareas (POST /api/empresas/{empresaId}/tareas), las publican (.../acciones/publicar) y consultan listados/historial.
 5. **Asignación**: se asignan trabajadores manual o automáticamente (/asignaciones/manual|auto); cada asignación pasa por aceptaciones y estados (ceptar, iniciar, pausar, inalizar, alidar).
@@ -57,7 +58,8 @@
 | Método | Ruta | Roles/Política | Descripción |
 | --- | --- | --- | --- |
 | POST | /api/empresas/{empresaId}/usuarios | Policy AdminEmpresa | Crea usuarios (Supervisor/Trabajador/Auditor) dentro de la empresa. |
-| GET | /api/empresas/{empresaId}/usuarios | Roles AdminEmpresa, Supervisor, Auditor, AdminGlobal | Lista usuarios con filtros (ol, habilidad, certificacion, sucursalId, page, pageSize). |
+| GET | /api/empresas/{empresaId}/usuarios | Roles AdminEmpresa, Supervisor, Auditor, AdminGlobal | Lista usuarios con filtros (
+ol, habilidad, certificacion, sucursalId, page, pageSize). |
 | GET | /api/empresas/{empresaId}/usuarios/{usuarioId} | Roles AdminEmpresa, Supervisor, Auditor, AdminGlobal | Obtiene información de un usuario específico de la empresa. |
 | PUT | /api/empresas/{empresaId}/usuarios/{usuarioId} | Policy AdminEmpresa | Actualiza datos del usuario (rol, habilidades, etc.). |
 | PUT | /api/empresas/{empresaId}/usuarios/{usuarioId}/password | Autenticado (dueño) u AdminEmpresa/AdminGlobal | Cambia contraseña respetando si la petición viene del propio usuario o un admin. |
@@ -127,4 +129,45 @@
 | Método | Ruta | Roles/Política | Descripción |
 | --- | --- | --- | --- |
 | GET | /api/empresas/{empresaId}/metricas/resumen | Roles AdminEmpresa, Supervisor, Auditor, AdminGlobal | Calcula KPIs de productividad y cumplimiento en un rango (desde, hasta, sucursalId). |
+
+---
+
+## 3. Sistema de Chat con WebSockets/SignalR
+
+### Endpoints de Chat General
+
+El sistema integra un sistema de chat en tiempo real con soporte para conversaciones 1:1 y grupales utilizando SignalR.
+
+| Método | Ruta | Roles/Política | Descripción |
+| --- | --- | --- | --- |
+| GET | /api/users/search | Autenticado | Busca usuarios por nombre o email para iniciar chats (query params: `q`, `take`). |
+| GET | /api/chats | Autenticado | Lista todos los chats del usuario autenticado con último mensaje y miembros. |
+| POST | /api/chats/one-to-one | Autenticado | Crea o recupera un chat 1:1 con otro usuario (body: `{"userId": int}`). |
+| POST | /api/chats/group | Autenticado | Crea un chat grupal (body: `{"name": string, "memberIds": int[]}`). |
+| POST | /api/chats/{chatId}/members | Autenticado | Agrega un miembro a un chat grupal existente (body: `{"userId": int}`). |
+| GET | /api/chats/{chatId}/messages | Autenticado | Obtiene mensajes de un chat con paginación (query params: `skip`, `take`). |
+| POST | /api/chats/{chatId}/messages | Autenticado | Envía un mensaje a un chat y notifica en tiempo real vía SignalR (body: `{"text": string}`). |
+
+### Hub SignalR
+
+| Endpoint | Métodos | Descripción |
+| --- | --- | --- |
+| /apphub | JoinChat(Guid chatId)<br>LeaveChat(Guid chatId) | Hub autorizado para comunicación en tiempo real. Se conecta con `?access_token={jwt}` |
+
+#### Eventos SignalR
+- **chat:message**: Evento emitido cuando se envía un mensaje. Payload: `{id, body, createdAt, senderId, chatId}`
+
+#### Conexión al Hub
+```javascript
+const connection = new signalR.HubConnectionBuilder()
+    .withUrl("/apphub?access_token=" + yourJwtToken)
+    .build();
+
+await connection.start();
+await connection.invoke("JoinChat", chatId);
+
+connection.on("chat:message", (message) => {
+    console.log("Nuevo mensaje:", message);
+});
+```
 
