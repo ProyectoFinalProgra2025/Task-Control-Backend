@@ -1,9 +1,14 @@
+using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using TaskControlBackend.Data;
+using TaskControlBackend.DTOs.Chat;
+using TaskControlBackend.Hubs;
+using TaskControlBackend.Models.Chat;
 using TaskControlBackend.Services;
 using TaskControlBackend.Services.Interfaces;
 
@@ -22,13 +27,18 @@ builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<ITareaService, TareaService>();
 builder.Services.AddControllers();
 
-// 🔹 CORS PARA FRONTEND EN localhost:5173
+// SignalR
+builder.Services.AddSignalR().AddJsonProtocol();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DevCors", policy =>
     {
         policy
-            .WithOrigins("http://localhost:5173", "https://localhost:5173", "https://taskcontrol.work")
+            .SetIsOriginAllowed(origin => 
+                origin.StartsWith("http://localhost") || 
+                origin.StartsWith("https://localhost") ||
+                origin == "https://taskcontrol.work")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -52,6 +62,20 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAudience = config["JwtSettings:Audience"],
             IssuerSigningKey = new SymmetricSecurityKey(key),
             ClockSkew = TimeSpan.Zero
+        };
+        // Allow SignalR to read access_token from query for WebSockets
+        opt.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"].FirstOrDefault();
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/apphub"))
+                {
+                    context.Token = accessToken;
+                }
+                return Task.CompletedTask;
+            }
         };
     });
 
@@ -91,6 +115,8 @@ app.MapGet("/", () => Results.Redirect("/swagger"));
 // 🔹 Middlewares (ORDEN IMPORTANTE)
 app.UseHttpsRedirection();
 
+app.UseRouting();
+
 // 👉 CORS DEBE IR ANTES DE AUTH
 app.UseCors("DevCors");
 
@@ -98,5 +124,200 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// ==================== CHAT ENDPOINTS ====================
+
+// Users: search
+app.MapGet("/api/users/search", async (string? q, int take, AppDbContext db) =>
+{
+    var term = (q ?? string.Empty).Trim().ToLowerInvariant();
+    take = Math.Clamp(take == 0 ? 20 : take, 1, 50);
+    var users = await db.Usuarios
+        .Where(u => term == string.Empty || u.Email.ToLower().Contains(term) || u.NombreCompleto.ToLower().Contains(term))
+        .OrderBy(u => u.NombreCompleto)
+        .Take(take)
+        .Select(u => new { u.Id, u.NombreCompleto, u.Email })
+        .ToListAsync();
+    return Results.Ok(users);
+}).RequireAuthorization().WithTags("Chat").WithOpenApi();
+
+// Chats: list my chats with last message and members
+app.MapGet("/api/chats", async (ClaimsPrincipal principal, AppDbContext db) =>
+{
+    var meId = ClaimsHelpers.GetUserId(principal);
+    if (meId == null) return Results.Unauthorized();
+    var meInt = meId.Value;
+
+    var raw = await db.Chats
+        .Where(c => c.Members.Any(m => m.UserId == meInt))
+        .Select(c => new
+        {
+            c.Id,
+            c.Type,
+            c.Name,
+            Members = c.Members.Select(m => new { m.UserId, m.User.NombreCompleto, m.User.Email }).ToList(),
+            LastMessage = c.Messages
+                .OrderByDescending(m => m.CreatedAt)
+                .Select(m => new { m.Id, m.Body, m.CreatedAt, m.SenderId })
+                .FirstOrDefault()
+        })
+        .ToListAsync();
+
+    var ordered = raw.OrderByDescending(x => x.LastMessage?.CreatedAt ?? DateTimeOffset.MinValue).ToList();
+    return Results.Ok(ordered);
+}).RequireAuthorization().WithTags("Chat").WithOpenApi();
+
+// Create or get 1:1 chat
+app.MapPost("/api/chats/one-to-one", async (ClaimsPrincipal principal, CreateOneToOneRequest req, AppDbContext db) =>
+{
+    var meId = ClaimsHelpers.GetUserId(principal);
+    if (meId == null) return Results.Unauthorized();
+    var meInt = meId.Value;
+    if (req.UserId == 0 || req.UserId == meInt) return Results.BadRequest(new { message = "Usuario inválido" });
+
+    var otherExists = await db.Usuarios.AnyAsync(u => u.Id == req.UserId);
+    if (!otherExists) return Results.NotFound(new { message = "Usuario no existe" });
+
+    var existing = await db.Chats
+        .Where(c => c.Type == ChatType.OneToOne
+                    && c.Members.Any(m => m.UserId == meId)
+                    && c.Members.Any(m => m.UserId == req.UserId))
+        .Select(c => c.Id)
+        .FirstOrDefaultAsync();
+
+    if (existing != Guid.Empty)
+        return Results.Ok(new { id = existing });
+
+    var chat = new Chat
+    {
+        Id = Guid.NewGuid(),
+        Type = ChatType.OneToOne,
+        CreatedById = meInt,
+        CreatedAt = DateTimeOffset.UtcNow
+    };
+    db.Chats.Add(chat);
+    db.ChatMembers.AddRange(
+        new ChatMember { ChatId = chat.Id, UserId = meInt, Role = ChatRole.Owner, JoinedAt = DateTimeOffset.UtcNow },
+        new ChatMember { ChatId = chat.Id, UserId = req.UserId, Role = ChatRole.Member, JoinedAt = DateTimeOffset.UtcNow }
+    );
+    await db.SaveChangesAsync();
+    return Results.Ok(new { id = chat.Id });
+}).RequireAuthorization().WithTags("Chat").WithOpenApi();
+
+// Create group chat
+app.MapPost("/api/chats/group", async (ClaimsPrincipal principal, CreateGroupRequest req, AppDbContext db) =>
+{
+    var meId = ClaimsHelpers.GetUserId(principal);
+    if (meId == null) return Results.Unauthorized();
+    var meInt = meId.Value;
+    var name = (req.Name ?? string.Empty).Trim();
+    if (name.Length < 3) return Results.BadRequest(new { message = "Nombre de grupo mínimo 3 caracteres" });
+
+    var memberIds = (req.MemberIds ?? new List<int>()).Where(id => id != 0 && id != meInt).Distinct().ToList();
+    if (memberIds.Count == 0) return Results.BadRequest(new { message = "Agrega al menos un miembro" });
+
+    // Validate users exist
+    var count = await db.Usuarios.CountAsync(u => memberIds.Contains(u.Id));
+    if (count != memberIds.Count) return Results.BadRequest(new { message = "Algún usuario no existe" });
+
+    var chat = new Chat
+    {
+        Id = Guid.NewGuid(),
+        Type = ChatType.Group,
+        Name = name,
+        CreatedById = meInt,
+        CreatedAt = DateTimeOffset.UtcNow
+    };
+    db.Chats.Add(chat);
+    db.ChatMembers.Add(new ChatMember { ChatId = chat.Id, UserId = meInt, Role = ChatRole.Owner, JoinedAt = DateTimeOffset.UtcNow });
+    foreach (var uid in memberIds)
+        db.ChatMembers.Add(new ChatMember { ChatId = chat.Id, UserId = uid, Role = ChatRole.Member, JoinedAt = DateTimeOffset.UtcNow });
+    await db.SaveChangesAsync();
+    return Results.Ok(new { id = chat.Id });
+}).RequireAuthorization().WithTags("Chat").WithOpenApi();
+
+// Add member to existing group
+app.MapPost("/api/chats/{chatId:guid}/members", async (ClaimsPrincipal principal, Guid chatId, AddGroupMemberRequest req, AppDbContext db) =>
+{
+    var meId = ClaimsHelpers.GetUserId(principal);
+    if (meId == null) return Results.Unauthorized();
+    if (req.UserId == 0) return Results.BadRequest(new { message = "Usuario inválido" });
+
+    var chat = await db.Chats.FirstOrDefaultAsync(c => c.Id == chatId);
+    if (chat is null) return Results.NotFound(new { message = "Chat no existe" });
+    if (chat.Type != ChatType.Group) return Results.BadRequest(new { message = "Solo los grupos permiten agregar miembros" });
+
+    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meId);
+    if (!isMember) return Results.Forbid();
+
+    var userExists = await db.Usuarios.AnyAsync(u => u.Id == req.UserId);
+    if (!userExists) return Results.BadRequest(new { message = "Usuario no existe" });
+
+    var alreadyMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == req.UserId);
+    if (alreadyMember) return Results.Conflict(new { message = "Usuario ya es miembro de este chat" });
+
+    db.ChatMembers.Add(new ChatMember
+    {
+        ChatId = chatId,
+        UserId = req.UserId,
+        Role = ChatRole.Member,
+        JoinedAt = DateTimeOffset.UtcNow
+    });
+    await db.SaveChangesAsync();
+    return Results.Ok(new { chatId, userId = req.UserId });
+}).RequireAuthorization().WithTags("Chat").WithOpenApi();
+
+// Get messages
+app.MapGet("/api/chats/{chatId:guid}/messages", async (ClaimsPrincipal principal, Guid chatId, int skip, int take, AppDbContext db) =>
+{
+    var meId = ClaimsHelpers.GetUserId(principal);
+    if (meId == null) return Results.Unauthorized();
+    var meInt = meId.Value;
+    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meInt);
+    if (!isMember) return Results.Forbid();
+
+    skip = Math.Max(skip, 0);
+    take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
+
+    var msgs = await db.Messages
+        .Where(m => m.ChatId == chatId)
+        .OrderBy(m => m.CreatedAt)
+        .Skip(skip)
+        .Take(take)
+        .Select(m => new { m.Id, m.Body, m.CreatedAt, m.SenderId })
+        .ToListAsync();
+    return Results.Ok(msgs);
+}).RequireAuthorization().WithTags("Chat").WithOpenApi();
+
+// Send message
+app.MapPost("/api/chats/{chatId:guid}/messages", async (ClaimsPrincipal principal, Guid chatId, SendMessageRequest req, AppDbContext db, IHubContext<ChatAppHub> hub) =>
+{
+    var meId = ClaimsHelpers.GetUserId(principal);
+    if (meId == null) return Results.Unauthorized();
+    var meInt = meId.Value;
+    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meInt);
+    if (!isMember) return Results.Forbid();
+
+    var body = (req.Text ?? string.Empty).Trim();
+    if (body.Length == 0) return Results.BadRequest(new { message = "Mensaje vacío" });
+
+    var msg = new Message
+    {
+        Id = Guid.NewGuid(),
+        ChatId = chatId,
+        SenderId = meInt,
+        Body = body,
+        CreatedAt = DateTimeOffset.UtcNow
+    };
+    db.Messages.Add(msg);
+    await db.SaveChangesAsync();
+
+    var payload = new { id = msg.Id, body = msg.Body, createdAt = msg.CreatedAt, senderId = msg.SenderId, chatId };
+    await hub.Clients.Group(chatId.ToString()).SendAsync("chat:message", payload);
+    return Results.Ok(payload);
+}).RequireAuthorization().WithTags("Chat").WithOpenApi();
+
+// SignalR Hub for real-time chat
+app.MapHub<ChatAppHub>("/apphub").RequireAuthorization();
 
 app.Run();
