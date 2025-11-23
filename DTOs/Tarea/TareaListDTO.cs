@@ -4,7 +4,7 @@ namespace TaskControlBackend.DTOs.Tarea
 {
     public class TareaListDTO
     {
-        public int Id { get; set; }
+        public Guid Id { get; set; }
         public string Titulo { get; set; } = null!;
         public string Descripcion { get; set; } = null!;
 
@@ -13,8 +13,12 @@ namespace TaskControlBackend.DTOs.Tarea
         public DateTime? DueDate { get; set; }
         public Departamento? Departamento { get; set; }
 
-        public int? AsignadoAUsuarioId { get; set; }
+        public Guid? AsignadoAUsuarioId { get; set; }
         public string? AsignadoAUsuarioNombre { get; set; }
+        
+        // Información del creador para sistema de chat
+        public Guid CreatedByUsuarioId { get; set; }
+        public string CreatedByUsuarioNombre { get; set; } = null!;
 
         public DateTime CreatedAt { get; set; }
     }

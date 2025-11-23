@@ -15,7 +15,7 @@ public class UsuarioService : IUsuarioService
     public UsuarioService(AppDbContext db) => _db = db;
 
     // CREA UN NUEVO USUARIO CON CONTRASEÑA HASHEADA
-    public async Task<int> CreateAsync(int empresaId, CreateUsuarioDTO dto)
+    public async Task<Guid> CreateAsync(Guid empresaId, CreateUsuarioDTO dto)
     {
         PasswordHasher.CreatePasswordHash(dto.Password, out var hash, out var salt);
 
@@ -39,9 +39,9 @@ public class UsuarioService : IUsuarioService
 
     // OBTIENE UN USUARIO POR ID CON SUS CAPACIDADES Y CONTROL DE PERMISOS
     public async Task<UsuarioDTO?> GetAsync(
-        int requesterUserId,
-        int? requesterEmpresaId,
-        int id,
+        Guid requesterUserId,
+        Guid? requesterEmpresaId,
+        Guid id,
         bool requesterIsAdminEmpresa,
         bool requesterIsAdminGeneral)
     {
@@ -66,7 +66,7 @@ public class UsuarioService : IUsuarioService
             NombreCompleto = u.NombreCompleto,
             Telefono = u.Telefono,
             Rol = u.Rol.ToString(),
-            EmpresaId = u.EmpresaId ?? 0,
+            EmpresaId = u.EmpresaId ?? Guid.Empty,
             Departamento = u.Departamento?.ToString(),
             NivelHabilidad = u.NivelHabilidad,
             IsActive = u.IsActive,
@@ -81,7 +81,7 @@ public class UsuarioService : IUsuarioService
     }
 
     // LISTA TODOS LOS USUARIOS DE UNA EMPRESA
-    public async Task<List<UsuarioListDTO>> ListAsync(int empresaId)
+    public async Task<List<UsuarioListDTO>> ListAsync(Guid empresaId)
     {
         var query = _db.Usuarios
             .AsNoTracking()
@@ -101,7 +101,7 @@ public class UsuarioService : IUsuarioService
     }
 
     // ACTUALIZA LOS DATOS PRINCIPALES DE UN USUARIO
-    public async Task UpdateAsync(int empresaId, int id, UpdateUsuarioDTO dto)
+    public async Task UpdateAsync(Guid empresaId, Guid id, UpdateUsuarioDTO dto)
     {
         var u = await _db.Usuarios
             .FirstOrDefaultAsync(x =>
@@ -122,7 +122,7 @@ public class UsuarioService : IUsuarioService
     }
 
     // DESACTIVA UN USUARIO EN VEZ DE ELIMINARLO
-    public async Task DeleteAsync(int empresaId, int id)
+    public async Task DeleteAsync(Guid empresaId, Guid id)
     {
         var u = await _db.Usuarios
             .FirstOrDefaultAsync(x =>
@@ -139,7 +139,7 @@ public class UsuarioService : IUsuarioService
     }
 
     // CREA O BUSCA UNA CAPACIDAD POR NOMBRE INSENSIBLE A MAYÚSCULAS
-    private async Task<Capacidad> GetOrCreateCapacidadAsync(int empresaId, string nombre)
+    private async Task<Capacidad> GetOrCreateCapacidadAsync(Guid empresaId, string nombre)
     {
         var nombreNorm = nombre.Trim().ToLower(); // <-- Corrección EF Core
 
@@ -170,7 +170,7 @@ public class UsuarioService : IUsuarioService
     {
         foreach (var item in capacidades)
         {
-            var capacidad = await GetOrCreateCapacidadAsync(usuario.EmpresaId ?? 0, item.Nombre);
+            var capacidad = await GetOrCreateCapacidadAsync(usuario.EmpresaId ?? Guid.Empty, item.Nombre);
 
             var existente = usuario.UsuarioCapacidades
                 .FirstOrDefault(uc => uc.CapacidadId == capacidad.Id);
@@ -196,8 +196,8 @@ public class UsuarioService : IUsuarioService
 
     // ACTUALIZA CAPACIDADES DE OTRO USUARIO COMO ADMINISTRADOR
     public async Task UpdateCapacidadesComoAdminAsync(
-        int empresaId,
-        int usuarioId,
+        Guid empresaId,
+        Guid usuarioId,
         List<CapacidadNivelItem> capacidades)
     {
         var usuario = await _db.Usuarios
@@ -216,8 +216,8 @@ public class UsuarioService : IUsuarioService
 
     // ACTUALIZA MIS PROPIAS CAPACIDADES COMO USUARIO
     public async Task UpdateMisCapacidadesAsync(
-        int usuarioId,
-        int empresaId,
+        Guid usuarioId,
+        Guid empresaId,
         List<CapacidadNivelItem> capacidades)
     {
         var usuario = await _db.Usuarios
@@ -234,7 +234,7 @@ public class UsuarioService : IUsuarioService
     }
 
     // NUEVO: ELIMINA UNA CAPACIDAD DE UN USUARIO
-    public async Task DeleteMisCapacidadAsync(int usuarioId, int empresaId, int capacidadId)
+    public async Task DeleteMisCapacidadAsync(Guid usuarioId, Guid empresaId, Guid capacidadId)
     {
         var usuario = await _db.Usuarios
             .Include(u => u.UsuarioCapacidades)

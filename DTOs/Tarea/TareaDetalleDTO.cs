@@ -4,8 +4,8 @@ namespace TaskControlBackend.DTOs.Tarea
 {
     public class TareaDetalleDTO
     {
-        public int Id { get; set; }
-        public int EmpresaId { get; set; }
+        public Guid Id { get; set; }
+        public Guid EmpresaId { get; set; }
 
         public string Titulo { get; set; } = null!;
         public string Descripcion { get; set; } = null!;
@@ -17,8 +17,12 @@ namespace TaskControlBackend.DTOs.Tarea
 
         public List<string> CapacidadesRequeridas { get; set; } = new();
 
-        public int? AsignadoAUsuarioId { get; set; }
+        public Guid? AsignadoAUsuarioId { get; set; }
         public string? AsignadoAUsuarioNombre { get; set; }
+
+        // Información del creador para sistema de chat
+        public Guid CreatedByUsuarioId { get; set; }
+        public string CreatedByUsuarioNombre { get; set; } = null!;
 
         public string? EvidenciaTexto { get; set; }
         public string? EvidenciaImagenUrl { get; set; }

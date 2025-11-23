@@ -171,7 +171,7 @@ namespace TaskControlBackend.Services
         // ======================================================
         // REGISTRO ADMIN EMPRESA
         // ======================================================
-        public async Task<int> RegisterAdminEmpresaAsync(RegisterAdminEmpresaDTO dto)
+        public async Task<Guid> RegisterAdminEmpresaAsync(RegisterAdminEmpresaDTO dto)
         {
             var normalizedEmail = dto.Email.Trim().ToLower();
 
@@ -212,7 +212,7 @@ namespace TaskControlBackend.Services
         // ======================================================
         // REGISTRO ADMIN GENERAL
         // ======================================================
-        public async Task<int> RegisterAdminGeneralAsync(RegisterAdminGeneralDTO dto)
+        public async Task<Guid> RegisterAdminGeneralAsync(RegisterAdminGeneralDTO dto)
         {
             var normalizedEmail = dto.Email.Trim().ToLower();
 

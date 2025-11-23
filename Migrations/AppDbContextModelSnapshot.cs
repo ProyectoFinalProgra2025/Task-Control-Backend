@@ -24,17 +24,15 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.Capacidad", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("EmpresaId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("EmpresaId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
@@ -63,8 +61,8 @@ namespace TaskControlBackend.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<int?>("CreatedById")
-                        .HasColumnType("int");
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Name")
                         .HasMaxLength(128)
@@ -85,8 +83,8 @@ namespace TaskControlBackend.Migrations
                     b.Property<Guid>("ChatId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<int>("UserId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset>("JoinedAt")
                         .HasColumnType("datetimeoffset");
@@ -120,8 +118,8 @@ namespace TaskControlBackend.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<int>("SenderId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("SenderId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -134,11 +132,9 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.Empresa", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -174,11 +170,9 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.RefreshToken", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -203,8 +197,8 @@ namespace TaskControlBackend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<int>("UsuarioId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -216,20 +210,18 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.Tarea", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("uniqueidentifier");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("AsignadoAUsuarioId")
-                        .HasColumnType("int");
+                    b.Property<Guid?>("AsignadoAUsuarioId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("CreatedByUsuarioId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("CreatedByUsuarioId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int?>("Departamento")
                         .HasColumnType("int");
@@ -242,8 +234,8 @@ namespace TaskControlBackend.Migrations
                     b.Property<DateTime?>("DueDate")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("EmpresaId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("EmpresaId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Estado")
                         .HasColumnType("int");
@@ -289,19 +281,17 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.TareaCapacidadRequerida", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("nvarchar(120)");
 
-                    b.Property<int>("TareaId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("TareaId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -313,11 +303,9 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.Usuario", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -330,8 +318,8 @@ namespace TaskControlBackend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<int?>("EmpresaId")
-                        .HasColumnType("int");
+                    b.Property<Guid?>("EmpresaId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -373,11 +361,11 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.UsuarioCapacidad", b =>
                 {
-                    b.Property<int>("UsuarioId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<int>("CapacidadId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("CapacidadId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Nivel")
                         .ValueGeneratedOnAdd()

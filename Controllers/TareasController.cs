@@ -26,14 +26,14 @@ namespace TaskControlBackend.Controllers
             return Enum.TryParse<RolUsuario>(r, out var rol) ? rol : RolUsuario.Usuario; // retorna rol
         }
 
-        private int UserId() =>
-            int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+        private Guid UserId() =>
+            Guid.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier) ??
                       User.FindFirstValue(JwtRegisteredClaimNames.Sub)!); // obtiene userId del token
 
-        private int? EmpresaIdClaim()
+        private Guid? EmpresaIdClaim()
         {
             var v = User.FindFirst("empresaId")?.Value; // obtiene empresaId del token
-            return int.TryParse(v, out var id) ? id : (int?)null; // retorna empresaId o null
+            return Guid.TryParse(v, out var id) ? id : (Guid?)null; // retorna empresaId o null
         }
 
         // POST /api/tareas - crear tarea sin asignar, solo AdminEmpresa
@@ -66,7 +66,7 @@ namespace TaskControlBackend.Controllers
             [FromQuery] EstadoTarea? estado,
             [FromQuery] PrioridadTarea? prioridad,
             [FromQuery] Departamento? departamento,
-            [FromQuery] int? asignadoA)
+            [FromQuery] Guid? asignadoA)
         {
             var empresaId = EmpresaIdClaim(); // obtiene empresaId
             if (empresaId is null)
@@ -86,8 +86,8 @@ namespace TaskControlBackend.Controllers
         }
 
         // GET /api/tareas/{id} - obtener tarea por id
-        [HttpGet("{id:int}")]
-        public async Task<IActionResult> GetById(int id)
+        [HttpGet("{id:guid}")]
+        public async Task<IActionResult> GetById(Guid id)
         {
             var empresaId = EmpresaIdClaim(); // obtiene empresaId
             if (empresaId is null)
@@ -100,8 +100,8 @@ namespace TaskControlBackend.Controllers
         }
 
         // PUT /api/tareas/{id}/asignar-manual - asignación manual por empresa
-        [HttpPut("{id:int}/asignar-manual")]
-        public async Task<IActionResult> AsignarManual(int id, [FromBody] AsignarManualTareaDTO dto)
+        [HttpPut("{id:guid}/asignar-manual")]
+        public async Task<IActionResult> AsignarManual(Guid id, [FromBody] AsignarManualTareaDTO dto)
         {
             if (Rol() != RolUsuario.AdminEmpresa) // solo AdminEmpresa
                 return Forbid();
@@ -116,8 +116,8 @@ namespace TaskControlBackend.Controllers
         }
 
         // PUT /api/tareas/{id}/asignar-automatico - asignación automática
-        [HttpPut("{id:int}/asignar-automatico")]
-        public async Task<IActionResult> AsignarAutomatico(int id, [FromBody] AsignarAutomaticoTareaDTO dto)
+        [HttpPut("{id:guid}/asignar-automatico")]
+        public async Task<IActionResult> AsignarAutomatico(Guid id, [FromBody] AsignarAutomaticoTareaDTO dto)
         {
             if (Rol() != RolUsuario.AdminEmpresa) // solo AdminEmpresa
                 return Forbid();
@@ -132,8 +132,8 @@ namespace TaskControlBackend.Controllers
         }
 
         // PUT /api/tareas/{id}/aceptar - usuario acepta su tarea
-        [HttpPut("{id:int}/aceptar")]
-        public async Task<IActionResult> Aceptar(int id)
+        [HttpPut("{id:guid}/aceptar")]
+        public async Task<IActionResult> Aceptar(Guid id)
         {
             if (Rol() != RolUsuario.Usuario) // solo usuarios
                 return Forbid();
@@ -177,8 +177,8 @@ namespace TaskControlBackend.Controllers
         }
 
         // PUT /api/tareas/{id}/finalizar - usuario finaliza tarea
-        [HttpPut("{id:int}/finalizar")]
-        public async Task<IActionResult> Finalizar(int id, [FromBody] FinalizarTareaDTO dto)
+        [HttpPut("{id:guid}/finalizar")]
+        public async Task<IActionResult> Finalizar(Guid id, [FromBody] FinalizarTareaDTO dto)
         {
             if (Rol() != RolUsuario.Usuario) // solo usuarios
                 return Forbid();
@@ -196,8 +196,8 @@ namespace TaskControlBackend.Controllers
         }
 
         // PUT /api/tareas/{id}/cancelar - cancelar tarea
-        [HttpPut("{id:int}/cancelar")]
-        public async Task<IActionResult> Cancelar(int id, [FromBody] string? motivo)
+        [HttpPut("{id:guid}/cancelar")]
+        public async Task<IActionResult> Cancelar(Guid id, [FromBody] string? motivo)
         {
             if (Rol() != RolUsuario.AdminEmpresa) // solo AdminEmpresa
                 return Forbid();
@@ -214,12 +214,12 @@ namespace TaskControlBackend.Controllers
         // PUT /api/tareas/{id}/reasignar - legado opcional
         public class ReasignarTareaDTO
         {
-            public int? UsuarioId { get; set; } // usuario manual
+            public Guid? UsuarioId { get; set; } // usuario manual
             public bool AsignacionAutomatica { get; set; } = false; // modo automático
         }
 
-        [HttpPut("{id:int}/reasignar")]
-        public async Task<IActionResult> Reasignar(int id, [FromBody] ReasignarTareaDTO dto)
+        [HttpPut("{id:guid}/reasignar")]
+        public async Task<IActionResult> Reasignar(Guid id, [FromBody] ReasignarTareaDTO dto)
         {
             if (Rol() != RolUsuario.AdminEmpresa) // solo AdminEmpresa
                 return Forbid();

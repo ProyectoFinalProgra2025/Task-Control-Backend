@@ -2,8 +2,8 @@ namespace TaskControlBackend.Models;
 
 public class Capacidad
 {
-    public int Id { get; set; }
-    public int EmpresaId { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid EmpresaId { get; set; }
 
     public Empresa Empresa { get; set; } = null!;
     public string Nombre { get; set; } = null!;

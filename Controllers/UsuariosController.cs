@@ -58,18 +58,18 @@ public class UsuariosController : ControllerBase
             StringComparison.Ordinal
         );
 
-    private int? EmpresaIdClaim()
+    private Guid? EmpresaIdClaim()
     {
         var v = User.FindFirst("empresaId")?.Value;
-        return int.TryParse(v, out var id) ? id : null;
+        return Guid.TryParse(v, out var id) ? id : null;
     }
 
-    private int UserId()
+    private Guid UserId()
     {
         var sub = User.FindFirstValue(JwtRegisteredClaimNames.Sub)
                   ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
 
-        return int.Parse(sub!);
+        return Guid.Parse(sub!);
     }
     
     // CRUD DE USUARIOS (ADMIN EMPRESA / ADMIN GENERAL)
@@ -96,13 +96,13 @@ public class UsuariosController : ControllerBase
         if (!IsAdminGeneral() && empresaId is null)
             return Unauthorized();
 
-        var list = await _svc.ListAsync(empresaId ?? 0);
+        var list = await _svc.ListAsync(empresaId ?? Guid.Empty);
         return Ok(new { success = true, data = list });
     }
 
 
-    [HttpGet("{id:int}")]
-    public async Task<IActionResult> GetById(int id)
+    [HttpGet("{id:guid}")]
+    public async Task<IActionResult> GetById(Guid id)
     {
         var dto = await _svc.GetAsync(
             requesterUserId: UserId(),
@@ -119,8 +119,8 @@ public class UsuariosController : ControllerBase
     }
 
 
-    [HttpPut("{id:int}")]
-    public async Task<IActionResult> Update(int id, [FromBody] UpdateUsuarioDTO dto)
+    [HttpPut("{id:guid}")]
+    public async Task<IActionResult> Update(Guid id, [FromBody] UpdateUsuarioDTO dto)
     {
         if (!IsAdminEmpresa()) return Forbid();
         if (!ModelState.IsValid) return UnprocessableEntity(ModelState);
@@ -133,8 +133,8 @@ public class UsuariosController : ControllerBase
     }
 
 
-    [HttpDelete("{id:int}")]
-    public async Task<IActionResult> Delete(int id)
+    [HttpDelete("{id:guid}")]
+    public async Task<IActionResult> Delete(Guid id)
     {
         if (!IsAdminEmpresa()) return Forbid();
 
@@ -146,9 +146,9 @@ public class UsuariosController : ControllerBase
     }
     
     // CAPACIDADES DEL USUARIO
-    [HttpPut("{id:int}/capacidades")]
+    [HttpPut("{id:guid}/capacidades")]
     public async Task<IActionResult> UpdateCapacidadesUsuario(
-        int id,
+        Guid id,
         [FromBody] UpdateCapacidadesDTO dto)
     {
         if (!IsAdminEmpresa()) return Forbid();
@@ -179,9 +179,9 @@ public class UsuariosController : ControllerBase
     
     // DELETE api/usuarios/mis-capacidades/{capacidadId}
     // Todos los roles autenticados pueden usarlo (AdminGeneral, AdminEmpresa, Usuario)
-    [HttpDelete("mis-capacidades/{capacidadId:int}")]
+    [HttpDelete("mis-capacidades/{capacidadId:guid}")]
     [Authorize]  // ya está a nivel de controlador
-    public async Task<IActionResult> DeleteMiCapacidad([FromRoute] int capacidadId)
+    public async Task<IActionResult> DeleteMiCapacidad([FromRoute] Guid capacidadId)
     {
         var empresaId = EmpresaIdClaim();
         if (empresaId is null)

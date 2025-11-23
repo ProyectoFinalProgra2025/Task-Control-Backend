@@ -25,7 +25,7 @@ namespace TaskControlBackend.Services
         // ============================================================
         // 5.1  CREAR TAREA (NO ASIGNA)
         // ============================================================
-        public async Task<int> CreateAsync(int empresaId, int adminEmpresaId, CreateTareaDTO dto)
+        public async Task<Guid> CreateAsync(Guid empresaId, Guid adminEmpresaId, CreateTareaDTO dto)
         {
             var tarea = new Tarea
             {
@@ -52,7 +52,7 @@ namespace TaskControlBackend.Services
         // ============================================================
         // 5.2  ASIGNACIÓN MANUAL
         // ============================================================
-        public async Task AsignarManualAsync(int empresaId, int tareaId, AsignarManualTareaDTO dto)
+        public async Task AsignarManualAsync(Guid empresaId, Guid tareaId, AsignarManualTareaDTO dto)
         {
             var tarea = await _db.Tareas
                 .Include(t => t.CapacidadesRequeridas)
@@ -150,7 +150,7 @@ namespace TaskControlBackend.Services
         // ============================================================
         // 5.3  ASIGNACIÓN AUTOMÁTICA PÚBLICA
         // ============================================================
-        public async Task AsignarAutomaticamenteAsync(int empresaId, int tareaId, bool forzarReasignacion)
+        public async Task AsignarAutomaticamenteAsync(Guid empresaId, Guid tareaId, bool forzarReasignacion)
         {
             var tarea = await _db.Tareas
                 .Include(t => t.CapacidadesRequeridas)
@@ -231,11 +231,12 @@ namespace TaskControlBackend.Services
         // LISTAR TAREAS
         // ============================================================
         public async Task<List<TareaListDTO>> ListAsync(
-            int empresaId, RolUsuario rol, int userId,
-            EstadoTarea? estado, PrioridadTarea? prioridad, Departamento? departamento, int? asignadoAUsuarioId)
+            Guid empresaId, RolUsuario rol, Guid userId,
+            EstadoTarea? estado, PrioridadTarea? prioridad, Departamento? departamento, Guid? asignadoAUsuarioId)
         {
             var q = _db.Tareas
                 .Include(t => t.AsignadoAUsuario)
+                .Include(t => t.CreatedByUsuario)
                 .AsNoTracking()
                 .Where(t => t.EmpresaId == empresaId && t.IsActive);
 
@@ -265,6 +266,8 @@ namespace TaskControlBackend.Services
                     Departamento = t.Departamento,
                     AsignadoAUsuarioId = t.AsignadoAUsuarioId,
                     AsignadoAUsuarioNombre = t.AsignadoAUsuario != null ? t.AsignadoAUsuario.NombreCompleto : null,
+                    CreatedByUsuarioId = t.CreatedByUsuarioId,
+                    CreatedByUsuarioNombre = t.CreatedByUsuario != null ? t.CreatedByUsuario.NombreCompleto : string.Empty,
                     CreatedAt = t.CreatedAt
                 }).ToListAsync();
         }
@@ -272,10 +275,11 @@ namespace TaskControlBackend.Services
         // ============================================================
         // OBTENER DETALLE
         // ============================================================
-        public async Task<TareaDetalleDTO?> GetAsync(int empresaId, RolUsuario rol, int userId, int tareaId)
+        public async Task<TareaDetalleDTO?> GetAsync(Guid empresaId, RolUsuario rol, Guid userId, Guid tareaId)
         {
             var t = await _db.Tareas
                 .Include(t => t.AsignadoAUsuario)
+                .Include(t => t.CreatedByUsuario)
                 .Include(t => t.CapacidadesRequeridas)
                 .FirstOrDefaultAsync(t => t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
 
@@ -296,7 +300,9 @@ namespace TaskControlBackend.Services
                 Departamento = t.Departamento,
                 CapacidadesRequeridas = t.CapacidadesRequeridas.Select(cr => cr.Nombre).ToList(),
                 AsignadoAUsuarioId = t.AsignadoAUsuarioId,
-                AsignadoAUsuarioNombre = t.AsignadoAUsuario?.NombreCompleto,
+                AsignadoAUsuarioNombre = t.AsignadoAUsuario != null ? t.AsignadoAUsuario.NombreCompleto : null,
+                CreatedByUsuarioId = t.CreatedByUsuarioId,
+                CreatedByUsuarioNombre = t.CreatedByUsuario != null ? t.CreatedByUsuario.NombreCompleto : string.Empty,
                 EvidenciaTexto = t.EvidenciaTexto,
                 EvidenciaImagenUrl = t.EvidenciaImagenUrl,
                 CreatedAt = t.CreatedAt,
@@ -308,7 +314,7 @@ namespace TaskControlBackend.Services
         // ============================================================
         // ACTUALIZAR TAREA
         // ============================================================
-        public async Task UpdateAsync(int empresaId, int tareaId, UpdateTareaDTO dto)
+        public async Task UpdateAsync(Guid empresaId, Guid tareaId, UpdateTareaDTO dto)
         {
             var t = await _db.Tareas
                 .Include(t => t.CapacidadesRequeridas)
@@ -339,7 +345,7 @@ namespace TaskControlBackend.Services
         // ============================================================
         // ACEPTAR
         // ============================================================
-        public async Task AceptarAsync(int empresaId, int tareaId, int usuarioId)
+        public async Task AceptarAsync(Guid empresaId, Guid tareaId, Guid usuarioId)
         {
             var t = await _db.Tareas.FirstOrDefaultAsync(t =>
                 t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
@@ -358,7 +364,7 @@ namespace TaskControlBackend.Services
         // ============================================================
         // FINALIZAR
         // ============================================================
-        public async Task FinalizarAsync(int empresaId, int tareaId, int usuarioId, FinalizarTareaDTO dto)
+        public async Task FinalizarAsync(Guid empresaId, Guid tareaId, Guid usuarioId, FinalizarTareaDTO dto)
         {
             var t = await _db.Tareas.FirstOrDefaultAsync(t =>
                 t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
@@ -381,7 +387,7 @@ namespace TaskControlBackend.Services
         // ============================================================
         // CANCELAR
         // ============================================================
-        public async Task CancelarAsync(int empresaId, int tareaId, int adminEmpresaId, string? motivo)
+        public async Task CancelarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, string? motivo)
         {
             var t = await _db.Tareas.FirstOrDefaultAsync(t =>
                 t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
@@ -401,7 +407,7 @@ namespace TaskControlBackend.Services
         // ============================================================
         // REASIGNAR
         // ============================================================
-        public async Task ReasignarAsync(int empresaId, int tareaId, int adminEmpresaId, int? nuevoUsuarioId, bool asignacionAutomatica)
+        public async Task ReasignarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, Guid? nuevoUsuarioId, bool asignacionAutomatica)
         {
             var t = await _db.Tareas
                 .Include(t => t.CapacidadesRequeridas)

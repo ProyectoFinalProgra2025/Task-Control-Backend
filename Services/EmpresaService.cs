@@ -15,11 +15,11 @@ namespace TaskControlBackend.Services
         public EmpresaService(AppDbContext db) => _db = db;
 
         // Obtener empresa por Id (solo lectura)
-        public Task<Empresa?> GetByIdAsync(int id) =>
+        public Task<Empresa?> GetByIdAsync(Guid id) =>
             _db.Empresas.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id);
 
         // Verifica si una empresa está aprobada
-        public async Task<bool> EmpresaEstaAprobadaAsync(int empresaId)
+        public async Task<bool> EmpresaEstaAprobadaAsync(Guid empresaId)
         {
             var e = await _db.Empresas
                 .AsNoTracking()
@@ -29,7 +29,7 @@ namespace TaskControlBackend.Services
         }
 
         // Crear empresa con estado Pending
-        public async Task<int> CrearEmpresaPendingAsync(string nombre, string? dir, string? tel)
+        public async Task<Guid> CrearEmpresaPendingAsync(string nombre, string? dir, string? tel)
         {
             if (string.IsNullOrWhiteSpace(nombre))
                 throw new ArgumentException("El nombre de la empresa es obligatorio", nameof(nombre));
@@ -51,7 +51,7 @@ namespace TaskControlBackend.Services
         }
 
         // Aprobar empresa
-        public async Task AprobarAsync(int empresaId)
+        public async Task AprobarAsync(Guid empresaId)
         {
             var e = await _db.Empresas.FirstOrDefaultAsync(x => x.Id == empresaId)
                 ?? throw new KeyNotFoundException($"Empresa con Id {empresaId} no encontrada");
@@ -63,7 +63,7 @@ namespace TaskControlBackend.Services
         }
 
         // Rechazar empresa
-        public async Task RechazarAsync(int empresaId, string? motivo = null)
+        public async Task RechazarAsync(Guid empresaId, string? motivo = null)
         {
             var e = await _db.Empresas.FirstOrDefaultAsync(x => x.Id == empresaId)
                 ?? throw new KeyNotFoundException($"Empresa con Id {empresaId} no encontrada");
@@ -77,7 +77,7 @@ namespace TaskControlBackend.Services
         }
 
         // Eliminación total de la empresa y todas sus relaciones
-        public async Task HardDeleteAsync(int empresaId)
+        public async Task HardDeleteAsync(Guid empresaId)
         {
             var empresa = await _db.Empresas.FirstOrDefaultAsync(e => e.Id == empresaId);
             if (empresa is null)

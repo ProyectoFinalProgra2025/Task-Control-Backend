@@ -4,9 +4,9 @@ namespace TaskControlBackend.Models
 {
     public class Tarea
     {
-        public int Id { get; set; }
+        public Guid Id { get; set; } = Guid.NewGuid();
 
-        public int EmpresaId { get; set; }
+        public Guid EmpresaId { get; set; }
         public Empresa Empresa { get; set; } = null!;
 
         public string Titulo { get; set; } = null!;
@@ -19,11 +19,11 @@ namespace TaskControlBackend.Models
         public Departamento? Departamento { get; set; }
 
         // Asignación
-        public int? AsignadoAUsuarioId { get; set; }
+        public Guid? AsignadoAUsuarioId { get; set; }
         public Usuario? AsignadoAUsuario { get; set; }
 
         // Auditoría básica
-        public int CreatedByUsuarioId { get; set; }
+        public Guid CreatedByUsuarioId { get; set; }
         public Usuario CreatedByUsuario { get; set; } = null!;
 
         // Evidencia

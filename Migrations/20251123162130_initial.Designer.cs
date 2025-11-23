@@ -12,8 +12,8 @@ using TaskControlBackend.Data;
 namespace TaskControlBackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251119145610_Initial")]
-    partial class Initial
+    [Migration("20251123162130_initial")]
+    partial class initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -27,17 +27,15 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.Capacidad", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("EmpresaId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("EmpresaId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsActive")
                         .ValueGeneratedOnAdd()
@@ -57,13 +55,89 @@ namespace TaskControlBackend.Migrations
                     b.ToTable("Capacidades", (string)null);
                 });
 
-            modelBuilder.Entity("TaskControlBackend.Models.Empresa", b =>
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.Chat", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<int>("Type")
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedById");
+
+                    b.ToTable("Chats");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.ChatMember", b =>
+                {
+                    b.Property<Guid>("ChatId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("JoinedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Role")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
+                    b.HasKey("ChatId", "UserId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("ChatMembers");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.Message", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<Guid>("ChatId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SenderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SenderId");
+
+                    b.HasIndex("ChatId", "CreatedAt");
+
+                    b.ToTable("Messages");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Empresa", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -99,11 +173,9 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.RefreshToken", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -128,8 +200,8 @@ namespace TaskControlBackend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<int>("UsuarioId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -141,20 +213,18 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.Tarea", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                        .HasColumnType("uniqueidentifier");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
-
-                    b.Property<int?>("AsignadoAUsuarioId")
-                        .HasColumnType("int");
+                    b.Property<Guid?>("AsignadoAUsuarioId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("CreatedByUsuarioId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("CreatedByUsuarioId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int?>("Departamento")
                         .HasColumnType("int");
@@ -167,8 +237,8 @@ namespace TaskControlBackend.Migrations
                     b.Property<DateTime?>("DueDate")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("EmpresaId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("EmpresaId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Estado")
                         .HasColumnType("int");
@@ -214,19 +284,17 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.TareaCapacidadRequerida", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Nombre")
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("nvarchar(120)");
 
-                    b.Property<int>("TareaId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("TareaId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
@@ -238,11 +306,9 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.Usuario", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -255,8 +321,8 @@ namespace TaskControlBackend.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<int?>("EmpresaId")
-                        .HasColumnType("int");
+                    b.Property<Guid?>("EmpresaId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -298,11 +364,11 @@ namespace TaskControlBackend.Migrations
 
             modelBuilder.Entity("TaskControlBackend.Models.UsuarioCapacidad", b =>
                 {
-                    b.Property<int>("UsuarioId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("UsuarioId")
+                        .HasColumnType("uniqueidentifier");
 
-                    b.Property<int>("CapacidadId")
-                        .HasColumnType("int");
+                    b.Property<Guid>("CapacidadId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<int>("Nivel")
                         .ValueGeneratedOnAdd()
@@ -325,6 +391,53 @@ namespace TaskControlBackend.Migrations
                         .IsRequired();
 
                     b.Navigation("Empresa");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.Chat", b =>
+                {
+                    b.HasOne("TaskControlBackend.Models.Usuario", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedById");
+
+                    b.Navigation("CreatedBy");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.ChatMember", b =>
+                {
+                    b.HasOne("TaskControlBackend.Models.Chat.Chat", "Chat")
+                        .WithMany("Members")
+                        .HasForeignKey("ChatId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TaskControlBackend.Models.Usuario", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Chat");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.Message", b =>
+                {
+                    b.HasOne("TaskControlBackend.Models.Chat.Chat", "Chat")
+                        .WithMany("Messages")
+                        .HasForeignKey("ChatId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TaskControlBackend.Models.Usuario", "Sender")
+                        .WithMany()
+                        .HasForeignKey("SenderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Chat");
+
+                    b.Navigation("Sender");
                 });
 
             modelBuilder.Entity("TaskControlBackend.Models.RefreshToken", b =>
@@ -407,6 +520,13 @@ namespace TaskControlBackend.Migrations
             modelBuilder.Entity("TaskControlBackend.Models.Capacidad", b =>
                 {
                     b.Navigation("UsuarioCapacidades");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.Chat", b =>
+                {
+                    b.Navigation("Members");
+
+                    b.Navigation("Messages");
                 });
 
             modelBuilder.Entity("TaskControlBackend.Models.Empresa", b =>

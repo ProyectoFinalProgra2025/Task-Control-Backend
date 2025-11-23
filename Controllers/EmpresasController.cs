@@ -39,16 +39,16 @@ namespace TaskControlBackend.Controllers
                 StringComparison.Ordinal
             );
 
-        private int? EmpresaIdClaim()
+        private Guid? EmpresaIdClaim()
         {
             var v = User.FindFirst("empresaId")?.Value;
-            if (int.TryParse(v, out var id))
+            if (Guid.TryParse(v, out var id))
                 return id;
             return null;
         }
-        [HttpGet("{id:int}/trabajadores-ids")]
+        [HttpGet("{id:guid}/trabajadores-ids")]
         [Authorize]
-        public async Task<IActionResult> GetTrabajadoresIds([FromRoute] int id)
+        public async Task<IActionResult> GetTrabajadoresIds([FromRoute] Guid id)
         {
             // 1. Verificar que la empresa exista
             var empresa = await _db.Empresas
@@ -111,26 +111,26 @@ namespace TaskControlBackend.Controllers
             return Ok(new { success = true, data = list });
         }
 
-        [HttpPut("{id:int}/aprobar")]
+        [HttpPut("{id:guid}/aprobar")]
         [AuthorizeRole(RolUsuario.AdminGeneral)]
-        public async Task<IActionResult> Aprobar([FromRoute] int id)
+        public async Task<IActionResult> Aprobar([FromRoute] Guid id)
         {
             await _svc.AprobarAsync(id);
             return Ok(new { success = true, message = "Empresa aprobada exitosamente" });
         }
 
-        [HttpPut("{id:int}/rechazar")]
+        [HttpPut("{id:guid}/rechazar")]
         [AuthorizeRole(RolUsuario.AdminGeneral)]
-        public async Task<IActionResult> Rechazar([FromRoute] int id)
+        public async Task<IActionResult> Rechazar([FromRoute] Guid id)
         {
             await _svc.RechazarAsync(id);
             return Ok(new { success = true, message = "Empresa rechazada exitosamente" });
         }
 
         // GET /api/empresas/{id}/estadisticas
-        [HttpGet("{id:int}/estadisticas")]
+        [HttpGet("{id:guid}/estadisticas")]
         [Authorize]
-        public async Task<IActionResult> Estadisticas([FromRoute] int id)
+        public async Task<IActionResult> Estadisticas([FromRoute] Guid id)
         {
             var empresa = await _db.Empresas
                 .AsNoTracking()
@@ -211,9 +211,9 @@ namespace TaskControlBackend.Controllers
             return Ok(new { success = true, data = dto });
         }
 
-        [HttpDelete("{id:int}")]
+        [HttpDelete("{id:guid}")]
         [AuthorizeRole(RolUsuario.AdminGeneral)]
-        public async Task<IActionResult> HardDelete([FromRoute] int id)
+        public async Task<IActionResult> HardDelete([FromRoute] Guid id)
         {
             await _svc.HardDeleteAsync(id);
             return Ok(new

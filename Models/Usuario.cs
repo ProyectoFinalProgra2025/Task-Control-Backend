@@ -4,7 +4,7 @@ namespace TaskControlBackend.Models;
 
 public class Usuario
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
     public string Email { get; set; } = null!;
     public string NombreCompleto { get; set; } = null!;
     public string? Telefono { get; set; }
@@ -12,7 +12,7 @@ public class Usuario
     public byte[] PasswordSalt { get; set; } = null!;
     public RolUsuario Rol { get; set; }
 
-    public int? EmpresaId { get; set; }
+    public Guid? EmpresaId { get; set; }
     public Empresa? Empresa { get; set; }
 
     // NUEVOS CAMPOS PARA TRABAJADOR

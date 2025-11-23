@@ -29,10 +29,10 @@ public class ChatAppHub : Hub
         await Groups.RemoveFromGroupAsync(Context.ConnectionId, chatId.ToString());
     }
 
-    private int GetUserId()
+    private Guid GetUserId()
     {
         var sub = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier) ??
                   Context.User?.FindFirstValue("sub");
-        return int.TryParse(sub, out var id) ? id : throw new HubException("Usuario inválido");
+        return Guid.TryParse(sub, out var id) ? id : throw new HubException("Usuario inválido");
     }
 }

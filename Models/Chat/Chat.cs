@@ -5,7 +5,7 @@ public class Chat
     public Guid Id { get; set; }
     public ChatType Type { get; set; }
     public string? Name { get; set; } // null for 1:1
-    public int? CreatedById { get; set; }
+    public Guid? CreatedById { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 
     public Usuario? CreatedBy { get; set; }

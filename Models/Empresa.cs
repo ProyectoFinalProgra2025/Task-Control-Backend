@@ -4,7 +4,7 @@ namespace TaskControlBackend.Models;
 
 public class Empresa
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
     public string Nombre { get; set; } = null!;
     public string? Direccion { get; set; }
     public string? Telefono { get; set; }
