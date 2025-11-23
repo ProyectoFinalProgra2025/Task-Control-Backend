@@ -146,10 +146,10 @@ app.MapGet("/api/chats", async (ClaimsPrincipal principal, AppDbContext db) =>
 {
     var meId = ClaimsHelpers.GetUserId(principal);
     if (meId == null) return Results.Unauthorized();
-    var meInt = meId.Value;
+    var meGuid = meId.Value;
 
     var raw = await db.Chats
-        .Where(c => c.Members.Any(m => m.UserId == meInt))
+        .Where(c => c.Members.Any(m => m.UserId == meGuid))
         .Select(c => new
         {
             c.Id,
@@ -172,15 +172,15 @@ app.MapPost("/api/chats/one-to-one", async (ClaimsPrincipal principal, CreateOne
 {
     var meId = ClaimsHelpers.GetUserId(principal);
     if (meId == null) return Results.Unauthorized();
-    var meInt = meId.Value;
-    if (req.UserId == 0 || req.UserId == meInt) return Results.BadRequest(new { message = "Usuario inválido" });
+    var meGuid = meId.Value;
+    if (req.UserId == Guid.Empty || req.UserId == meGuid) return Results.BadRequest(new { message = "Usuario inválido" });
 
     var otherExists = await db.Usuarios.AnyAsync(u => u.Id == req.UserId);
     if (!otherExists) return Results.NotFound(new { message = "Usuario no existe" });
 
     var existing = await db.Chats
         .Where(c => c.Type == ChatType.OneToOne
-                    && c.Members.Any(m => m.UserId == meId)
+                    && c.Members.Any(m => m.UserId == meGuid)
                     && c.Members.Any(m => m.UserId == req.UserId))
         .Select(c => c.Id)
         .FirstOrDefaultAsync();
@@ -192,12 +192,12 @@ app.MapPost("/api/chats/one-to-one", async (ClaimsPrincipal principal, CreateOne
     {
         Id = Guid.NewGuid(),
         Type = ChatType.OneToOne,
-        CreatedById = meInt,
+        CreatedById = meGuid,
         CreatedAt = DateTimeOffset.UtcNow
     };
     db.Chats.Add(chat);
     db.ChatMembers.AddRange(
-        new ChatMember { ChatId = chat.Id, UserId = meInt, Role = ChatRole.Owner, JoinedAt = DateTimeOffset.UtcNow },
+        new ChatMember { ChatId = chat.Id, UserId = meGuid, Role = ChatRole.Owner, JoinedAt = DateTimeOffset.UtcNow },
         new ChatMember { ChatId = chat.Id, UserId = req.UserId, Role = ChatRole.Member, JoinedAt = DateTimeOffset.UtcNow }
     );
     await db.SaveChangesAsync();
@@ -209,11 +209,11 @@ app.MapPost("/api/chats/group", async (ClaimsPrincipal principal, CreateGroupReq
 {
     var meId = ClaimsHelpers.GetUserId(principal);
     if (meId == null) return Results.Unauthorized();
-    var meInt = meId.Value;
+    var meGuid = meId.Value;
     var name = (req.Name ?? string.Empty).Trim();
     if (name.Length < 3) return Results.BadRequest(new { message = "Nombre de grupo mínimo 3 caracteres" });
 
-    var memberIds = (req.MemberIds ?? new List<int>()).Where(id => id != 0 && id != meInt).Distinct().ToList();
+    var memberIds = (req.MemberIds ?? new List<Guid>()).Where(id => id != Guid.Empty && id != meGuid).Distinct().ToList();
     if (memberIds.Count == 0) return Results.BadRequest(new { message = "Agrega al menos un miembro" });
 
     // Validate users exist
@@ -225,11 +225,11 @@ app.MapPost("/api/chats/group", async (ClaimsPrincipal principal, CreateGroupReq
         Id = Guid.NewGuid(),
         Type = ChatType.Group,
         Name = name,
-        CreatedById = meInt,
+        CreatedById = meGuid,
         CreatedAt = DateTimeOffset.UtcNow
     };
     db.Chats.Add(chat);
-    db.ChatMembers.Add(new ChatMember { ChatId = chat.Id, UserId = meInt, Role = ChatRole.Owner, JoinedAt = DateTimeOffset.UtcNow });
+    db.ChatMembers.Add(new ChatMember { ChatId = chat.Id, UserId = meGuid, Role = ChatRole.Owner, JoinedAt = DateTimeOffset.UtcNow });
     foreach (var uid in memberIds)
         db.ChatMembers.Add(new ChatMember { ChatId = chat.Id, UserId = uid, Role = ChatRole.Member, JoinedAt = DateTimeOffset.UtcNow });
     await db.SaveChangesAsync();
@@ -241,13 +241,14 @@ app.MapPost("/api/chats/{chatId:guid}/members", async (ClaimsPrincipal principal
 {
     var meId = ClaimsHelpers.GetUserId(principal);
     if (meId == null) return Results.Unauthorized();
-    if (req.UserId == 0) return Results.BadRequest(new { message = "Usuario inválido" });
+    var meGuid = meId.Value;
+    if (req.UserId == Guid.Empty) return Results.BadRequest(new { message = "Usuario inválido" });
 
     var chat = await db.Chats.FirstOrDefaultAsync(c => c.Id == chatId);
     if (chat is null) return Results.NotFound(new { message = "Chat no existe" });
     if (chat.Type != ChatType.Group) return Results.BadRequest(new { message = "Solo los grupos permiten agregar miembros" });
 
-    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meId);
+    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meGuid);
     if (!isMember) return Results.Forbid();
 
     var userExists = await db.Usuarios.AnyAsync(u => u.Id == req.UserId);
@@ -272,8 +273,8 @@ app.MapGet("/api/chats/{chatId:guid}/messages", async (ClaimsPrincipal principal
 {
     var meId = ClaimsHelpers.GetUserId(principal);
     if (meId == null) return Results.Unauthorized();
-    var meInt = meId.Value;
-    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meInt);
+    var meGuid = meId.Value;
+    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meGuid);
     if (!isMember) return Results.Forbid();
 
     skip = Math.Max(skip, 0);
@@ -294,8 +295,8 @@ app.MapPost("/api/chats/{chatId:guid}/messages", async (ClaimsPrincipal principa
 {
     var meId = ClaimsHelpers.GetUserId(principal);
     if (meId == null) return Results.Unauthorized();
-    var meInt = meId.Value;
-    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meInt);
+    var meGuid = meId.Value;
+    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meGuid);
     if (!isMember) return Results.Forbid();
 
     var body = (req.Text ?? string.Empty).Trim();
@@ -305,7 +306,7 @@ app.MapPost("/api/chats/{chatId:guid}/messages", async (ClaimsPrincipal principa
     {
         Id = Guid.NewGuid(),
         ChatId = chatId,
-        SenderId = meInt,
+        SenderId = meGuid,
         Body = body,
         CreatedAt = DateTimeOffset.UtcNow
     };

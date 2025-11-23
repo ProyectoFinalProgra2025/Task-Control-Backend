@@ -2,7 +2,7 @@ namespace TaskControlBackend.DTOs.Empresa
 {
     public class EmpresaEstadisticasDTO
     {
-        public int EmpresaId { get; set; }
+        public Guid EmpresaId { get; set; }
         public string NombreEmpresa { get; set; } = null!;
 
         public int TotalTrabajadores { get; set; }

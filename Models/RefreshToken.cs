@@ -5,9 +5,9 @@ namespace TaskControlBackend.Models;
 
 public class RefreshToken
 {
-    public int Id { get; set; }
+    public Guid Id { get; set; } = Guid.NewGuid();
 
-    public int UsuarioId { get; set; }
+    public Guid UsuarioId { get; set; }
     //Guardamos solo el hash de la contraseña
     public Usuario Usuario { get; set; } = null!;
 

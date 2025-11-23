@@ -5,25 +5,25 @@ namespace TaskControlBackend.Services.Interfaces
 {
     public interface ITareaService
     {
-        Task<int> CreateAsync(int empresaId, int adminEmpresaId, CreateTareaDTO dto);
+        Task<Guid> CreateAsync(Guid empresaId, Guid adminEmpresaId, CreateTareaDTO dto);
 
         Task<List<TareaListDTO>> ListAsync(
-            int empresaId, RolUsuario rol, int userId,
-            EstadoTarea? estado, PrioridadTarea? prioridad, Departamento? departamento, int? asignadoAUsuarioId);
+            Guid empresaId, RolUsuario rol, Guid userId,
+            EstadoTarea? estado, PrioridadTarea? prioridad, Departamento? departamento, Guid? asignadoAUsuarioId);
 
-        Task<TareaDetalleDTO?> GetAsync(int empresaId, RolUsuario rol, int userId, int tareaId);
+        Task<TareaDetalleDTO?> GetAsync(Guid empresaId, RolUsuario rol, Guid userId, Guid tareaId);
 
-        Task UpdateAsync(int empresaId, int tareaId, UpdateTareaDTO dto);
+        Task UpdateAsync(Guid empresaId, Guid tareaId, UpdateTareaDTO dto);
 
         // 🔹 NUEVOS
-        Task AsignarManualAsync(int empresaId, int tareaId, AsignarManualTareaDTO dto);
-        Task AsignarAutomaticamenteAsync(int empresaId, int tareaId, bool forzarReasignacion);
+        Task AsignarManualAsync(Guid empresaId, Guid tareaId, AsignarManualTareaDTO dto);
+        Task AsignarAutomaticamenteAsync(Guid empresaId, Guid tareaId, bool forzarReasignacion);
 
-        Task AceptarAsync(int empresaId, int tareaId, int usuarioId);
-        Task FinalizarAsync(int empresaId, int tareaId, int usuarioId, FinalizarTareaDTO dto);
-        Task CancelarAsync(int empresaId, int tareaId, int adminEmpresaId, string? motivo);
+        Task AceptarAsync(Guid empresaId, Guid tareaId, Guid usuarioId);
+        Task FinalizarAsync(Guid empresaId, Guid tareaId, Guid usuarioId, FinalizarTareaDTO dto);
+        Task CancelarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, string? motivo);
 
-        // Si quieres seguir teniendo un “reasignar” genérico, puede reutilizar las anteriores:
-        Task ReasignarAsync(int empresaId, int tareaId, int adminEmpresaId, int? nuevoUsuarioId, bool asignacionAutomatica);
+        // Si quieres seguir teniendo un "reasignar" genérico, puede reutilizar las anteriores:
+        Task ReasignarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, Guid? nuevoUsuarioId, bool asignacionAutomatica);
     }
 }

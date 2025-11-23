@@ -5,41 +5,41 @@ namespace TaskControlBackend.Services.Interfaces;
 
 public interface IUsuarioService
 {
-    Task<int> CreateAsync(int empresaId, CreateUsuarioDTO dto);
+    Task<Guid> CreateAsync(Guid empresaId, CreateUsuarioDTO dto);
 
     Task<UsuarioDTO?> GetAsync(
-        int requesterUserId,
-        int? requesterEmpresaId,
-        int id,
+        Guid requesterUserId,
+        Guid? requesterEmpresaId,
+        Guid id,
         bool requesterIsAdminEmpresa,
         bool requesterIsAdminGeneral
     );
 
-    Task<List<UsuarioListDTO>> ListAsync(int empresaId);
+    Task<List<UsuarioListDTO>> ListAsync(Guid empresaId);
 
-    Task UpdateAsync(int empresaId, int id, UpdateUsuarioDTO dto);
+    Task UpdateAsync(Guid empresaId, Guid id, UpdateUsuarioDTO dto);
 
     // Soft delete = IsActive = false
-    Task DeleteAsync(int empresaId, int id);
+    Task DeleteAsync(Guid empresaId, Guid id);
 
 
     /// Permite a un administrador general o administrador de empresa actualizar
     /// las capacidades de un usuario dentro de una empresa.
     Task UpdateCapacidadesComoAdminAsync(
-        int empresaId,
-        int usuarioId,
+        Guid empresaId,
+        Guid usuarioId,
         List<CapacidadNivelItem> capacidades
     );
     /// Permite al propio usuario actualizar sus capacidades en su empresa.
     Task UpdateMisCapacidadesAsync(
-        int usuarioId,
-        int empresaId,
+        Guid usuarioId,
+        Guid empresaId,
         List<CapacidadNivelItem> capacidades
     );
     //Permite eliminar capacidades creadas para el usuario.
     Task DeleteMisCapacidadAsync(
-        int usuarioId, 
-        int empresaId, 
-        int capacidadId);
+        Guid usuarioId, 
+        Guid empresaId, 
+        Guid capacidadId);
 
 }
