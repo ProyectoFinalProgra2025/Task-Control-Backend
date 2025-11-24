@@ -4,5 +4,6 @@ public enum RolUsuario
 {
     AdminGeneral = 1, 
     AdminEmpresa = 2, 
-    Usuario = 3
+    Usuario = 3,
+    ManagerDepartamento = 4
 }

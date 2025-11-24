@@ -9,6 +9,7 @@ using TaskControlBackend.Data;
 using TaskControlBackend.DTOs.Chat;
 using TaskControlBackend.Hubs;
 using TaskControlBackend.Models.Chat;
+using TaskControlBackend.Models.Enums;
 using TaskControlBackend.Services;
 using TaskControlBackend.Services.Interfaces;
 
@@ -127,17 +128,61 @@ app.MapControllers();
 
 // ==================== CHAT ENDPOINTS ====================
 
-// Users: search
-app.MapGet("/api/users/search", async (string? q, int take, AppDbContext db) =>
+// Users: search (filtered by role)
+app.MapGet("/api/users/search", async (string? q, int take, ClaimsPrincipal principal, AppDbContext db) =>
 {
+    var meId = ClaimsHelpers.GetUserId(principal);
+    if (meId == null) return Results.Unauthorized();
+    var meGuid = meId.Value;
+
+    var me = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == meGuid);
+    if (me is null) return Results.Unauthorized();
+
     var term = (q ?? string.Empty).Trim().ToLowerInvariant();
     take = Math.Clamp(take == 0 ? 20 : take, 1, 50);
-    var users = await db.Usuarios
-        .Where(u => term == string.Empty || u.Email.ToLower().Contains(term) || u.NombreCompleto.ToLower().Contains(term))
+
+    var query = db.Usuarios.AsQueryable();
+
+    // Role-based filtering
+    if (me.Rol == RolUsuario.AdminGeneral)
+    {
+        // AdminGeneral can only chat with AdminEmpresa
+        query = query.Where(u => u.Rol == RolUsuario.AdminEmpresa);
+    }
+    else if (me.Rol == RolUsuario.AdminEmpresa || me.Rol == RolUsuario.Usuario)
+    {
+        // AdminEmpresa and Worker can chat with anyone in their company
+        query = query.Where(u => u.EmpresaId == me.EmpresaId);
+    }
+    else if (me.Rol == RolUsuario.ManagerDepartamento)
+    {
+        // ManagerDepartamento can chat with:
+        // 1. Their AdminEmpresa
+        // 2. Other ManagerDepartamento in same company
+        // 3. Workers in their own department
+        query = query.Where(u =>
+            u.EmpresaId == me.EmpresaId &&
+            (u.Rol == RolUsuario.AdminEmpresa ||
+             u.Rol == RolUsuario.ManagerDepartamento ||
+             (u.Rol == RolUsuario.Usuario && u.Departamento == me.Departamento))
+        );
+    }
+
+    // Exclude self
+    query = query.Where(u => u.Id != meGuid);
+
+    // Search filter
+    if (!string.IsNullOrEmpty(term))
+    {
+        query = query.Where(u => u.Email.ToLower().Contains(term) || u.NombreCompleto.ToLower().Contains(term));
+    }
+
+    var users = await query
         .OrderBy(u => u.NombreCompleto)
         .Take(take)
         .Select(u => new { u.Id, u.NombreCompleto, u.Email })
         .ToListAsync();
+        
     return Results.Ok(users);
 }).RequireAuthorization().WithTags("Chat").WithOpenApi();
 
@@ -175,8 +220,31 @@ app.MapPost("/api/chats/one-to-one", async (ClaimsPrincipal principal, CreateOne
     var meGuid = meId.Value;
     if (req.UserId == Guid.Empty || req.UserId == meGuid) return Results.BadRequest(new { message = "Usuario inválido" });
 
-    var otherExists = await db.Usuarios.AnyAsync(u => u.Id == req.UserId);
-    if (!otherExists) return Results.NotFound(new { message = "Usuario no existe" });
+    // Obtener información de ambos usuarios
+    var me = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == meGuid);
+    var other = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == req.UserId);
+    
+    if (me == null) return Results.Unauthorized();
+    if (other == null) return Results.NotFound(new { message = "Usuario no existe" });
+
+    // RESTRICCIÓN: AdminGeneral solo puede chatear con AdminEmpresa
+    if (me.Rol == RolUsuario.AdminGeneral && other.Rol != RolUsuario.AdminEmpresa)
+    {
+        return Results.Forbid();
+    }
+    if (other.Rol == RolUsuario.AdminGeneral && me.Rol != RolUsuario.AdminEmpresa)
+    {
+        return Results.Forbid();
+    }
+
+    // RESTRICCIÓN: Usuarios de diferentes empresas no pueden chatear (excepto AdminGeneral)
+    if (me.Rol != RolUsuario.AdminGeneral && other.Rol != RolUsuario.AdminGeneral)
+    {
+        if (me.EmpresaId != other.EmpresaId)
+        {
+            return Results.BadRequest(new { message = "No puedes chatear con usuarios de otras empresas" });
+        }
+    }
 
     var existing = await db.Chats
         .Where(c => c.Type == ChatType.OneToOne

@@ -15,7 +15,7 @@ public interface IUsuarioService
         bool requesterIsAdminGeneral
     );
 
-    Task<List<UsuarioListDTO>> ListAsync(Guid empresaId);
+    Task<List<UsuarioListDTO>> ListAsync(Guid empresaId, string? rolFilter = null);
 
     Task UpdateAsync(Guid empresaId, Guid id, UpdateUsuarioDTO dto);
 

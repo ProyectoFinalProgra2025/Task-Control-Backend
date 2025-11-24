@@ -3,7 +3,13 @@
 ## 1. Arquitectura y flujo
 
 - **Stack**: ASP.NET Core 9 + EF Core SQL Server; controladores en Controllers/, servicios de dominio en Services/ y entidades en Models/, todos registrados mediante DI en Program.cs.
-- **Autenticación y autorización**: JWT Bearer emitido por AuthService/JwtTokenService, refresh tokens persistidos y políticas por rol (AdminGlobal, AdminEmpresa, Supervisor, Trabajador, Auditor) configuradas en Program.cs.
+- **Autenticación y autorización**: JWT Bearer emitido por AuthService/TokenService, refresh tokens persistidos y políticas por rol (AdminGeneral, AdminEmpresa, ManagerDepartamento, Usuario) configuradas en Program.cs.
+- **Roles del sistema**:
+  - **AdminGeneral**: Superadministrador de la plataforma. Gestiona empresas y solo chatea con AdminEmpresa.
+  - **AdminEmpresa**: Dueño de la empresa. Gestiona todos los departamentos, crea tareas para cualquier departamento, delega a jefes de área.
+  - **ManagerDepartamento**: Jefe de un departamento específico. Crea tareas solo para su departamento, asigna workers de su departamento, puede delegar tareas a otros jefes y recibir delegaciones.
+  - **Usuario**: Worker/Empleado. Acepta y ejecuta tareas asignadas por su jefe de departamento.
+- **Sistema de delegación entre jefes**: Los ManagerDepartamento pueden delegar tareas a otros jefes de diferentes departamentos. El jefe destino debe aceptar o rechazar explícitamente la delegación (con motivo obligatorio en caso de rechazo). Una vez aceptada, el jefe destino toma control total de la tarea.
 - **Multitenancy y validaciones**: Cada endpoint contextualizado por {empresaId} verifica el claim empresaId (métodos EmpresaCoincide) y EF aplica filtros soft-delete por entidad para aislar datos.
 - **Servicios de dominio**: Clases como EmpresaService, UsuarioService, TareaService, AsignacionService, EvidenciaService, ChatService, AuditoriaService y MetricasService concentran reglas de negocio y devuelven DTOs (Dtos/) listos para la API.
 - **Middlewares**: ErrorHandlingMiddleware uniforma errores (Problem Details) y IdempotencyMiddleware cachea respuestas de POST usando el header Idempotency-Key para evitar dobles ejecuciones en acciones críticas.
@@ -68,14 +74,19 @@ ol, habilidad, certificacion, sucursalId, page, pageSize). |
 ### Tareas
 | Método | Ruta | Roles/Política | Descripción |
 | --- | --- | --- | --- |
-| POST | /api/empresas/{empresaId}/tareas | Roles Supervisor, AdminEmpresa, AdminGlobal | Crea una tarea en estado borrador asociada a sucursales/competencias. |
-| POST | /api/empresas/{empresaId}/tareas/{tareaId}/acciones/publicar | Roles Supervisor, AdminEmpresa, AdminGlobal | Publica la tarea para que pueda asignarse. |
-| GET | /api/empresas/{empresaId}/tareas | Roles Supervisor, Trabajador, Auditor, AdminEmpresa, AdminGlobal | Lista tareas con filtros (estado, prioridad, sucursalId, rango de fechas, paginación); la visibilidad se ajusta al rol y usuario. |
-| GET | /api/empresas/{empresaId}/tareas/{tareaId} | Roles Supervisor, Trabajador, Auditor, AdminEmpresa, AdminGlobal | Obtiene detalle de una tarea validando pertenencia. |
-| PUT | /api/empresas/{empresaId}/tareas/{tareaId} | Roles Supervisor, AdminEmpresa, AdminGlobal | Actualiza tareas en borrador antes de publicarlas. |
-| DELETE | /api/empresas/{empresaId}/tareas/{tareaId} | Roles Supervisor, AdminEmpresa, AdminGlobal | Cancela una tarea (soft-delete) aún sin completar. |
-| GET | /api/empresas/{empresaId}/tareas/{tareaId}/historial | Roles Supervisor, Auditor, AdminEmpresa, AdminGlobal | Recupera el historial de eventos de la tarea con paginación. |
-| POST | /api/empresas/{empresaId}/tareas/{tareaId}/incidencias | Roles Trabajador, AdminGlobal | Trabajador asignado reporta incidencias con descripción y adjuntos. |
+| POST | /api/tareas | AdminEmpresa, ManagerDepartamento | Crea una tarea en estado Pendiente. ManagerDepartamento solo puede crear tareas para su departamento. |
+| GET | /api/tareas | AdminEmpresa, ManagerDepartamento, Usuario | Lista tareas. ManagerDepartamento solo ve tareas de su departamento. Usuario solo ve sus tareas asignadas. |
+| GET | /api/tareas/{id} | AdminEmpresa, ManagerDepartamento, Usuario | Obtiene detalle de una tarea. Usuario solo puede ver sus propias tareas. |
+| GET | /api/tareas/mis | Usuario | Lista tareas asignadas al usuario autenticado. |
+| PUT | /api/tareas/{id}/asignar-manual | AdminEmpresa, ManagerDepartamento | Asigna manualmente una tarea a un worker. ManagerDepartamento solo puede asignar a workers de su departamento. |
+| PUT | /api/tareas/{id}/asignar-automatico | AdminEmpresa, ManagerDepartamento | Asignación automática basada en capacidades y disponibilidad. |
+| PUT | /api/tareas/{id}/aceptar | Usuario | El worker acepta una tarea asignada. |
+| PUT | /api/tareas/{id}/finalizar | Usuario | El worker finaliza una tarea con evidencia. |
+| PUT | /api/tareas/{id}/cancelar | AdminEmpresa, ManagerDepartamento | Cancela una tarea pendiente o asignada. |
+| PUT | /api/tareas/{id}/reasignar | AdminEmpresa, ManagerDepartamento | Reasigna una tarea a otro worker (manual o automática). |
+| **PUT** | **/api/tareas/{id}/delegar** | **AdminEmpresa, ManagerDepartamento** | **Delega una tarea a otro jefe de área. La tarea queda pendiente de aceptación.** |
+| **PUT** | **/api/tareas/{id}/aceptar-delegacion** | **ManagerDepartamento** | **El jefe destino acepta la tarea delegada y puede gestionarla.** |
+| **PUT** | **/api/tareas/{id}/rechazar-delegacion** | **ManagerDepartamento** | **El jefe destino rechaza la tarea con motivo obligatorio. Regresa al jefe origen.** |
 
 ### Asignaciones y flujo de ejecución
 | Método | Ruta | Roles/Política | Descripción |

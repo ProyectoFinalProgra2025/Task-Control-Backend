@@ -25,5 +25,10 @@ namespace TaskControlBackend.Services.Interfaces
 
         // Si quieres seguir teniendo un "reasignar" genérico, puede reutilizar las anteriores:
         Task ReasignarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, Guid? nuevoUsuarioId, bool asignacionAutomatica);
+
+        // 🔹 DELEGACIÓN ENTRE JEFES
+        Task DelegarTareaAJefeAsync(Guid empresaId, Guid tareaId, Guid jefeOrigenId, DelegarTareaDTO dto);
+        Task AceptarDelegacionAsync(Guid empresaId, Guid tareaId, Guid jefeDestinoId, AceptarDelegacionDTO dto);
+        Task RechazarDelegacionAsync(Guid empresaId, Guid tareaId, Guid jefeDestinoId, RechazarDelegacionDTO dto);
     }
 }

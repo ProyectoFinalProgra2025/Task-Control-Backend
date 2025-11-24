@@ -12,8 +12,8 @@ using TaskControlBackend.Data;
 namespace TaskControlBackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251123162130_initial")]
-    partial class initial
+    [Migration("20251123214055_InitialWithDelegation")]
+    partial class InitialWithDelegation
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -226,6 +226,21 @@ namespace TaskControlBackend.Migrations
                     b.Property<Guid>("CreatedByUsuarioId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool?>("DelegacionAceptada")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime?>("DelegacionResueltaAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DelegadaAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid?>("DelegadoAUsuarioId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("DelegadoPorUsuarioId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<int?>("Departamento")
                         .HasColumnType("int");
 
@@ -239,6 +254,11 @@ namespace TaskControlBackend.Migrations
 
                     b.Property<Guid>("EmpresaId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("EstaDelegada")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<int>("Estado")
                         .HasColumnType("int");
@@ -260,6 +280,10 @@ namespace TaskControlBackend.Migrations
                     b.Property<string>("MotivoCancelacion")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("MotivoRechazoJefe")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<int>("Prioridad")
                         .HasColumnType("int");
 
@@ -276,6 +300,10 @@ namespace TaskControlBackend.Migrations
                     b.HasIndex("AsignadoAUsuarioId");
 
                     b.HasIndex("CreatedByUsuarioId");
+
+                    b.HasIndex("DelegadoPorUsuarioId");
+
+                    b.HasIndex("DelegadoAUsuarioId", "EstaDelegada");
 
                     b.HasIndex("EmpresaId", "Estado");
 
@@ -464,6 +492,16 @@ namespace TaskControlBackend.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("TaskControlBackend.Models.Usuario", "DelegadoAUsuario")
+                        .WithMany()
+                        .HasForeignKey("DelegadoAUsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("TaskControlBackend.Models.Usuario", "DelegadoPorUsuario")
+                        .WithMany()
+                        .HasForeignKey("DelegadoPorUsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("TaskControlBackend.Models.Empresa", "Empresa")
                         .WithMany()
                         .HasForeignKey("EmpresaId")
@@ -473,6 +511,10 @@ namespace TaskControlBackend.Migrations
                     b.Navigation("AsignadoAUsuario");
 
                     b.Navigation("CreatedByUsuario");
+
+                    b.Navigation("DelegadoAUsuario");
+
+                    b.Navigation("DelegadoPorUsuario");
 
                     b.Navigation("Empresa");
                 });

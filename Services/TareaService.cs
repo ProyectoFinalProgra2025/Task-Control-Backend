@@ -25,8 +25,22 @@ namespace TaskControlBackend.Services
         // ============================================================
         // 5.1  CREAR TAREA (NO ASIGNA)
         // ============================================================
-        public async Task<Guid> CreateAsync(Guid empresaId, Guid adminEmpresaId, CreateTareaDTO dto)
+        public async Task<Guid> CreateAsync(Guid empresaId, Guid creadorId, CreateTareaDTO dto)
         {
+            // Validar que si el creador es ManagerDepartamento, la tarea debe ser de su departamento
+            var creador = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == creadorId && u.EmpresaId == empresaId);
+            if (creador == null)
+                throw new UnauthorizedAccessException("Usuario no encontrado");
+
+            if (creador.Rol == RolUsuario.ManagerDepartamento)
+            {
+                if (!creador.Departamento.HasValue)
+                    throw new InvalidOperationException("El jefe de área debe tener un departamento asignado");
+
+                if (!dto.Departamento.HasValue || dto.Departamento.Value != creador.Departamento.Value)
+                    throw new InvalidOperationException("Solo puedes crear tareas para tu propio departamento");
+            }
+
             var tarea = new Tarea
             {
                 EmpresaId = empresaId,
@@ -35,7 +49,7 @@ namespace TaskControlBackend.Services
                 Prioridad = dto.Prioridad,
                 DueDate = dto.DueDate,
                 Departamento = dto.Departamento,
-                CreatedByUsuarioId = adminEmpresaId,
+                CreatedByUsuarioId = creadorId,
                 Estado = EstadoTarea.Pendiente
             };
 
@@ -50,7 +64,7 @@ namespace TaskControlBackend.Services
         }
 
         // ============================================================
-        // 5.2  ASIGNACIÓN MANUAL
+        // 5.2  ASIGNACIÓN MANUAL (con validación de departamento para jefes)
         // ============================================================
         public async Task AsignarManualAsync(Guid empresaId, Guid tareaId, AsignarManualTareaDTO dto)
         {
@@ -72,7 +86,7 @@ namespace TaskControlBackend.Services
                 usuario = await _db.Usuarios.FirstOrDefaultAsync(u =>
                     u.Id == dto.UsuarioId.Value &&
                     u.EmpresaId == empresaId &&
-                    u.Rol == RolUsuario.Usuario &&
+                    (u.Rol == RolUsuario.Usuario || u.Rol == RolUsuario.ManagerDepartamento) &&
                     u.IsActive);
             }
             // Buscar por nombre
@@ -82,7 +96,7 @@ namespace TaskControlBackend.Services
 
                 var candidatos = await _db.Usuarios
                     .Where(u => u.EmpresaId == empresaId &&
-                                u.Rol == RolUsuario.Usuario &&
+                                (u.Rol == RolUsuario.Usuario || u.Rol == RolUsuario.ManagerDepartamento) &&
                                 u.IsActive &&
                                 u.NombreCompleto.ToLower().Contains(nombreBuscado))
                     .ToListAsync();
@@ -187,7 +201,7 @@ namespace TaskControlBackend.Services
             var candidatos = await _db.Usuarios
                 .Include(u => u.UsuarioCapacidades).ThenInclude(uc => uc.Capacidad)
                 .Where(u => u.EmpresaId == tarea.EmpresaId &&
-                            u.Rol == RolUsuario.Usuario &&
+                            (u.Rol == RolUsuario.Usuario || u.Rol == RolUsuario.ManagerDepartamento) &&
                             u.IsActive &&
                             u.Departamento == tarea.Departamento)
                 .ToListAsync();
@@ -228,7 +242,7 @@ namespace TaskControlBackend.Services
         }
 
         // ============================================================
-        // LISTAR TAREAS
+        // LISTAR TAREAS (con filtrado por departamento para jefes)
         // ============================================================
         public async Task<List<TareaListDTO>> ListAsync(
             Guid empresaId, RolUsuario rol, Guid userId,
@@ -237,10 +251,18 @@ namespace TaskControlBackend.Services
             var q = _db.Tareas
                 .Include(t => t.AsignadoAUsuario)
                 .Include(t => t.CreatedByUsuario)
+                .Include(t => t.DelegadoAUsuario)
+                .Include(t => t.DelegadoPorUsuario)
                 .AsNoTracking()
                 .Where(t => t.EmpresaId == empresaId && t.IsActive);
 
+            // Usuario (Worker) solo ve sus tareas asignadas
             if (rol == RolUsuario.Usuario)
+            {
+                q = q.Where(t => t.AsignadoAUsuarioId == userId);
+            }
+            // ManagerDepartamento solo ve SUS tareas asignadas (igual que Usuario)
+            else if (rol == RolUsuario.ManagerDepartamento)
             {
                 q = q.Where(t => t.AsignadoAUsuarioId == userId);
             }
@@ -268,6 +290,13 @@ namespace TaskControlBackend.Services
                     AsignadoAUsuarioNombre = t.AsignadoAUsuario != null ? t.AsignadoAUsuario.NombreCompleto : null,
                     CreatedByUsuarioId = t.CreatedByUsuarioId,
                     CreatedByUsuarioNombre = t.CreatedByUsuario != null ? t.CreatedByUsuario.NombreCompleto : string.Empty,
+                    EstaDelegada = t.EstaDelegada,
+                    DelegadoPorUsuarioId = t.DelegadoPorUsuarioId,
+                    DelegadoPorUsuarioNombre = t.DelegadoPorUsuario != null ? t.DelegadoPorUsuario.NombreCompleto : null,
+                    DelegadoAUsuarioId = t.DelegadoAUsuarioId,
+                    DelegadoAUsuarioNombre = t.DelegadoAUsuario != null ? t.DelegadoAUsuario.NombreCompleto : null,
+                    DelegacionAceptada = t.DelegacionAceptada,
+                    MotivoRechazoJefe = t.MotivoRechazoJefe,
                     CreatedAt = t.CreatedAt
                 }).ToListAsync();
         }
@@ -281,6 +310,8 @@ namespace TaskControlBackend.Services
                 .Include(t => t.AsignadoAUsuario)
                 .Include(t => t.CreatedByUsuario)
                 .Include(t => t.CapacidadesRequeridas)
+                .Include(t => t.DelegadoPorUsuario)
+                .Include(t => t.DelegadoAUsuario)
                 .FirstOrDefaultAsync(t => t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
 
             if (t is null) return null;
@@ -305,6 +336,15 @@ namespace TaskControlBackend.Services
                 CreatedByUsuarioNombre = t.CreatedByUsuario != null ? t.CreatedByUsuario.NombreCompleto : string.Empty,
                 EvidenciaTexto = t.EvidenciaTexto,
                 EvidenciaImagenUrl = t.EvidenciaImagenUrl,
+                EstaDelegada = t.EstaDelegada,
+                DelegadoPorUsuarioId = t.DelegadoPorUsuarioId,
+                DelegadoPorUsuarioNombre = t.DelegadoPorUsuario != null ? t.DelegadoPorUsuario.NombreCompleto : null,
+                DelegadoAUsuarioId = t.DelegadoAUsuarioId,
+                DelegadoAUsuarioNombre = t.DelegadoAUsuario != null ? t.DelegadoAUsuario.NombreCompleto : null,
+                DelegadaAt = t.DelegadaAt,
+                DelegacionAceptada = t.DelegacionAceptada,
+                MotivoRechazoJefe = t.MotivoRechazoJefe,
+                DelegacionResueltaAt = t.DelegacionResueltaAt,
                 CreatedAt = t.CreatedAt,
                 FinalizadaAt = t.FinalizadaAt,
                 MotivoCancelacion = t.MotivoCancelacion
@@ -351,8 +391,11 @@ namespace TaskControlBackend.Services
                 t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
 
             if (t is null) throw new KeyNotFoundException("Tarea no encontrada");
-            if (t.AsignadoAUsuarioId != usuarioId)
+            
+            // Validar que el usuario sea el asignado O el delegado
+            if (t.AsignadoAUsuarioId != usuarioId && t.DelegadoAUsuarioId != usuarioId)
                 throw new UnauthorizedAccessException("No eres el usuario asignado a esta tarea");
+            
             if (t.Estado != EstadoTarea.Asignada)
                 throw new InvalidOperationException("Solo se pueden aceptar tareas en estado Asignada");
 
@@ -385,9 +428,9 @@ namespace TaskControlBackend.Services
         }
 
         // ============================================================
-        // CANCELAR
+        // CANCELAR / RECHAZAR
         // ============================================================
-        public async Task CancelarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, string? motivo)
+        public async Task CancelarAsync(Guid empresaId, Guid tareaId, Guid usuarioId, string? motivo)
         {
             var t = await _db.Tareas.FirstOrDefaultAsync(t =>
                 t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
@@ -397,10 +440,23 @@ namespace TaskControlBackend.Services
             if (t.Estado != EstadoTarea.Pendiente && t.Estado != EstadoTarea.Asignada)
                 throw new InvalidOperationException("Solo se pueden cancelar tareas Pendientes o Asignadas");
 
-            t.Estado = EstadoTarea.Cancelada;
-            t.MotivoCancelacion = motivo;
+            // Si es un manager rechazando (no es admin ni creador), marcar como rechazo de delegación
+            var usuario = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId);
+            if (usuario?.Rol == RolUsuario.ManagerDepartamento && t.DelegadoAUsuarioId == usuarioId)
+            {
+                t.DelegacionAceptada = false;
+                t.MotivoRechazoJefe = motivo;
+                t.DelegacionResueltaAt = DateTime.UtcNow;
+                t.AsignadoAUsuarioId = null; // Liberar asignación
+                t.Estado = EstadoTarea.Pendiente; // Volver a pendiente
+            }
+            else
+            {
+                t.Estado = EstadoTarea.Cancelada;
+                t.MotivoCancelacion = motivo;
+            }
+            
             t.UpdatedAt = DateTime.UtcNow;
-
             await _db.SaveChangesAsync();
         }
 
@@ -434,6 +490,143 @@ namespace TaskControlBackend.Services
             }
 
             t.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+        }
+
+        // ============================================================
+        // DELEGACIÓN ENTRE JEFES DE ÁREA
+        // ============================================================
+
+        /// <summary>
+        /// Un jefe delega una tarea a otro jefe de un departamento diferente.
+        /// La tarea queda en estado de espera hasta que el jefe destino la acepte o rechace.
+        /// </summary>
+        public async Task DelegarTareaAJefeAsync(Guid empresaId, Guid tareaId, Guid jefeOrigenId, DelegarTareaDTO dto)
+        {
+            // Validar tarea
+            var tarea = await _db.Tareas
+                .FirstOrDefaultAsync(t => t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
+
+            if (tarea is null)
+                throw new KeyNotFoundException("Tarea no encontrada");
+
+            if (tarea.Estado == EstadoTarea.Finalizada || tarea.Estado == EstadoTarea.Cancelada)
+                throw new InvalidOperationException("No se pueden delegar tareas finalizadas o canceladas");
+
+            // Validar jefe origen
+            var jefeOrigen = await _db.Usuarios
+                .FirstOrDefaultAsync(u => u.Id == jefeOrigenId && u.EmpresaId == empresaId && u.IsActive);
+
+            if (jefeOrigen == null)
+                throw new UnauthorizedAccessException("Jefe origen no encontrado");
+
+            if (jefeOrigen.Rol != RolUsuario.ManagerDepartamento && jefeOrigen.Rol != RolUsuario.AdminEmpresa)
+                throw new InvalidOperationException("Solo jefes de área o admin de empresa pueden delegar tareas");
+
+            // Si es ManagerDepartamento, validar que la tarea sea de su departamento
+            if (jefeOrigen.Rol == RolUsuario.ManagerDepartamento)
+            {
+                if (!jefeOrigen.Departamento.HasValue)
+                    throw new InvalidOperationException("El jefe debe tener un departamento asignado");
+
+                if (tarea.Departamento != jefeOrigen.Departamento.Value && tarea.CreatedByUsuarioId != jefeOrigenId)
+                    throw new InvalidOperationException("Solo puedes delegar tareas de tu departamento o creadas por ti");
+            }
+
+            // Validar jefe destino
+            var jefeDestino = await _db.Usuarios
+                .FirstOrDefaultAsync(u => u.Id == dto.JefeDestinoId && u.EmpresaId == empresaId && u.IsActive);
+
+            if (jefeDestino == null)
+                throw new KeyNotFoundException("Jefe destino no encontrado");
+
+            if (jefeDestino.Rol != RolUsuario.ManagerDepartamento)
+                throw new InvalidOperationException("Solo se puede delegar a jefes de área");
+
+            if (!jefeDestino.Departamento.HasValue)
+                throw new InvalidOperationException("El jefe destino debe tener un departamento asignado");
+
+            if (jefeOrigen.Id == jefeDestino.Id)
+                throw new InvalidOperationException("No puedes delegar una tarea a ti mismo");
+
+            // Actualizar tarea con delegación
+            tarea.EstaDelegada = true;
+            tarea.DelegadoPorUsuarioId = jefeOrigenId;
+            tarea.DelegadoAUsuarioId = dto.JefeDestinoId;
+            tarea.DelegadaAt = DateTime.UtcNow;
+            tarea.DelegacionAceptada = null; // Pendiente
+            tarea.UpdatedAt = DateTime.UtcNow;
+
+            // Opcional: cambiar departamento de la tarea al del jefe destino
+            tarea.Departamento = jefeDestino.Departamento;
+
+            await _db.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// El jefe destino acepta la tarea delegada y puede proceder a asignarla o trabajarla.
+        /// </summary>
+        public async Task AceptarDelegacionAsync(Guid empresaId, Guid tareaId, Guid jefeDestinoId, AceptarDelegacionDTO dto)
+        {
+            var tarea = await _db.Tareas
+                .FirstOrDefaultAsync(t => t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
+
+            if (tarea is null)
+                throw new KeyNotFoundException("Tarea no encontrada");
+
+            if (!tarea.EstaDelegada)
+                throw new InvalidOperationException("Esta tarea no está delegada");
+
+            if (tarea.DelegadoAUsuarioId != jefeDestinoId)
+                throw new UnauthorizedAccessException("No eres el jefe al que se delegó esta tarea");
+
+            if (tarea.DelegacionAceptada.HasValue)
+                throw new InvalidOperationException("Esta delegación ya fue resuelta");
+
+            // Aceptar delegación
+            tarea.DelegacionAceptada = true;
+            tarea.DelegacionResueltaAt = DateTime.UtcNow;
+            tarea.UpdatedAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// El jefe destino rechaza la tarea delegada con un motivo obligatorio.
+        /// La tarea regresa al jefe origen.
+        /// </summary>
+        public async Task RechazarDelegacionAsync(Guid empresaId, Guid tareaId, Guid jefeDestinoId, RechazarDelegacionDTO dto)
+        {
+            var tarea = await _db.Tareas
+                .FirstOrDefaultAsync(t => t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
+
+            if (tarea is null)
+                throw new KeyNotFoundException("Tarea no encontrada");
+
+            if (!tarea.EstaDelegada)
+                throw new InvalidOperationException("Esta tarea no está delegada");
+
+            if (tarea.DelegadoAUsuarioId != jefeDestinoId)
+                throw new UnauthorizedAccessException("No eres el jefe al que se delegó esta tarea");
+
+            if (tarea.DelegacionAceptada.HasValue)
+                throw new InvalidOperationException("Esta delegación ya fue resuelta");
+
+            // Obtener jefe origen para devolver el departamento
+            var jefeOrigen = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == tarea.DelegadoPorUsuarioId);
+
+            // Rechazar delegación
+            tarea.DelegacionAceptada = false;
+            tarea.MotivoRechazoJefe = dto.MotivoRechazo;
+            tarea.DelegacionResueltaAt = DateTime.UtcNow;
+            tarea.UpdatedAt = DateTime.UtcNow;
+
+            // Revertir al departamento original si es posible
+            if (jefeOrigen?.Departamento.HasValue == true)
+            {
+                tarea.Departamento = jefeOrigen.Departamento;
+            }
+
             await _db.SaveChangesAsync();
         }
     }

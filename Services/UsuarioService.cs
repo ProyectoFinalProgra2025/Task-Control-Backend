@@ -17,6 +17,15 @@ public class UsuarioService : IUsuarioService
     // CREA UN NUEVO USUARIO CON CONTRASEÑA HASHEADA
     public async Task<Guid> CreateAsync(Guid empresaId, CreateUsuarioDTO dto)
     {
+        // Determinar el rol (por defecto Usuario)
+        var rol = dto.Rol ?? RolUsuario.Usuario;
+        
+        // Validar que ManagerDepartamento tenga departamento
+        if (rol == RolUsuario.ManagerDepartamento && dto.Departamento == null)
+        {
+            throw new ArgumentException("ManagerDepartamento debe tener un departamento asignado");
+        }
+
         PasswordHasher.CreatePasswordHash(dto.Password, out var hash, out var salt);
 
         var user = new Usuario
@@ -26,7 +35,7 @@ public class UsuarioService : IUsuarioService
             Telefono = dto.Telefono,
             PasswordHash = hash,
             PasswordSalt = salt,
-            Rol = RolUsuario.Usuario,
+            Rol = rol,
             EmpresaId = empresaId,
             Departamento = dto.Departamento,
             NivelHabilidad = dto.NivelHabilidad
@@ -80,13 +89,28 @@ public class UsuarioService : IUsuarioService
         };
     }
 
-    // LISTA TODOS LOS USUARIOS DE UNA EMPRESA
-    public async Task<List<UsuarioListDTO>> ListAsync(Guid empresaId)
+    // LISTA TODOS LOS USUARIOS DE UNA EMPRESA (Workers y Managers) con filtro opcional por rol
+    public async Task<List<UsuarioListDTO>> ListAsync(Guid empresaId, string? rolFilter = null)
     {
         var query = _db.Usuarios
             .AsNoTracking()
-            .Where(u => u.EmpresaId == empresaId && u.Rol == RolUsuario.Usuario)
-            .OrderByDescending(u => u.CreatedAt);
+            .Where(u => u.EmpresaId == empresaId && 
+                       (u.Rol == RolUsuario.Usuario || u.Rol == RolUsuario.ManagerDepartamento));
+
+        // Aplicar filtro por rol si se especifica
+        if (!string.IsNullOrEmpty(rolFilter))
+        {
+            if (rolFilter.Equals("ManagerDepartamento", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(u => u.Rol == RolUsuario.ManagerDepartamento);
+            }
+            else if (rolFilter.Equals("Usuario", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(u => u.Rol == RolUsuario.Usuario);
+            }
+        }
+
+        query = query.OrderByDescending(u => u.CreatedAt);
 
         return await EntityFrameworkQueryableExtensions.ToListAsync(
             Queryable.Select(query, u => new UsuarioListDTO
@@ -94,6 +118,7 @@ public class UsuarioService : IUsuarioService
                 Id = u.Id,
                 NombreCompleto = u.NombreCompleto,
                 Email = u.Email,
+                Rol = u.Rol.ToString(),
                 Departamento = u.Departamento != null ? u.Departamento.ToString() : null,
                 NivelHabilidad = u.NivelHabilidad,
                 IsActive = u.IsActive
