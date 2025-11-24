@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace TaskControlBackend.Migrations
 {
     /// <inheritdoc />
-    public partial class initial : Migration
+    public partial class InitialWithDelegation : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -137,6 +137,13 @@ namespace TaskControlBackend.Migrations
                     Departamento = table.Column<int>(type: "int", nullable: true),
                     AsignadoAUsuarioId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
                     CreatedByUsuarioId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    EstaDelegada = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
+                    DelegadoPorUsuarioId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    DelegadoAUsuarioId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    DelegadaAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DelegacionAceptada = table.Column<bool>(type: "bit", nullable: true),
+                    MotivoRechazoJefe = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    DelegacionResueltaAt = table.Column<DateTime>(type: "datetime2", nullable: true),
                     EvidenciaTexto = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     EvidenciaImagenUrl = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     FinalizadaAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -163,6 +170,18 @@ namespace TaskControlBackend.Migrations
                     table.ForeignKey(
                         name: "FK_Tareas_Usuarios_CreatedByUsuarioId",
                         column: x => x.CreatedByUsuarioId,
+                        principalTable: "Usuarios",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Tareas_Usuarios_DelegadoAUsuarioId",
+                        column: x => x.DelegadoAUsuarioId,
+                        principalTable: "Usuarios",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Tareas_Usuarios_DelegadoPorUsuarioId",
+                        column: x => x.DelegadoPorUsuarioId,
                         principalTable: "Usuarios",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
@@ -311,6 +330,16 @@ namespace TaskControlBackend.Migrations
                 name: "IX_Tareas_CreatedByUsuarioId",
                 table: "Tareas",
                 column: "CreatedByUsuarioId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Tareas_DelegadoAUsuarioId_EstaDelegada",
+                table: "Tareas",
+                columns: new[] { "DelegadoAUsuarioId", "EstaDelegada" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Tareas_DelegadoPorUsuarioId",
+                table: "Tareas",
+                column: "DelegadoPorUsuarioId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Tareas_EmpresaId_Estado",

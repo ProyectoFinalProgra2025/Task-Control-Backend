@@ -29,6 +29,20 @@ namespace TaskControlBackend.Data.Configurations
                 .HasForeignKey(t => t.CreatedByUsuarioId)
                 .OnDelete(DeleteBehavior.Restrict);
 
+            // Configuración de delegación entre jefes
+            b.HasOne(t => t.DelegadoPorUsuario)
+                .WithMany()
+                .HasForeignKey(t => t.DelegadoPorUsuarioId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.HasOne(t => t.DelegadoAUsuario)
+                .WithMany()
+                .HasForeignKey(t => t.DelegadoAUsuarioId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            b.Property(t => t.EstaDelegada).HasDefaultValue(false);
+            b.Property(t => t.MotivoRechazoJefe).HasMaxLength(500);
+
             b.Property(t => t.Estado).IsRequired();
             b.Property(t => t.Prioridad).IsRequired();
             b.Property(t => t.IsActive).HasDefaultValue(true);
@@ -39,6 +53,7 @@ namespace TaskControlBackend.Data.Configurations
                 .OnDelete(DeleteBehavior.Cascade);
 
             b.HasIndex(t => new { t.EmpresaId, t.Estado });
+            b.HasIndex(t => new { t.DelegadoAUsuarioId, t.EstaDelegada });
         }
     }
 }

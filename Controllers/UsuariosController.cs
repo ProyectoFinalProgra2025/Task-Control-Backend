@@ -58,6 +58,13 @@ public class UsuariosController : ControllerBase
             StringComparison.Ordinal
         );
 
+    private bool IsManagerDepartamento() =>
+        string.Equals(
+            User.FindFirstValue(ClaimTypes.Role),
+            RolUsuario.ManagerDepartamento.ToString(),
+            StringComparison.Ordinal
+        );
+
     private Guid? EmpresaIdClaim()
     {
         var v = User.FindFirst("empresaId")?.Value;
@@ -88,15 +95,15 @@ public class UsuariosController : ControllerBase
 
 
     [HttpGet]
-    public async Task<IActionResult> List()
+    public async Task<IActionResult> List([FromQuery] string? rol)
     {
-        if (!IsAdminEmpresa() && !IsAdminGeneral()) return Forbid();
+        if (!IsAdminEmpresa() && !IsAdminGeneral() && !IsManagerDepartamento()) return Forbid();
 
         var empresaId = EmpresaIdClaim();
         if (!IsAdminGeneral() && empresaId is null)
             return Unauthorized();
 
-        var list = await _svc.ListAsync(empresaId ?? Guid.Empty);
+        var list = await _svc.ListAsync(empresaId ?? Guid.Empty, rol);
         return Ok(new { success = true, data = list });
     }
 

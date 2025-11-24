@@ -26,6 +26,17 @@ namespace TaskControlBackend.Models
         public Guid CreatedByUsuarioId { get; set; }
         public Usuario CreatedByUsuario { get; set; } = null!;
 
+        // Delegación entre jefes de área
+        public bool EstaDelegada { get; set; } = false;
+        public Guid? DelegadoPorUsuarioId { get; set; }
+        public Usuario? DelegadoPorUsuario { get; set; }
+        public Guid? DelegadoAUsuarioId { get; set; }
+        public Usuario? DelegadoAUsuario { get; set; }
+        public DateTime? DelegadaAt { get; set; }
+        public bool? DelegacionAceptada { get; set; } // null = pendiente, true = aceptada, false = rechazada
+        public string? MotivoRechazoJefe { get; set; }
+        public DateTime? DelegacionResueltaAt { get; set; }
+
         // Evidencia
         public string? EvidenciaTexto { get; set; }
         public string? EvidenciaImagenUrl { get; set; }

@@ -36,11 +36,12 @@ namespace TaskControlBackend.Controllers
             return Guid.TryParse(v, out var id) ? id : (Guid?)null; // retorna empresaId o null
         }
 
-        // POST /api/tareas - crear tarea sin asignar, solo AdminEmpresa
+        // POST /api/tareas - crear tarea sin asignar (AdminEmpresa o ManagerDepartamento)
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateTareaDTO dto)
         {
-            if (Rol() != RolUsuario.AdminEmpresa) // solo AdminEmpresa
+            var rol = Rol();
+            if (rol != RolUsuario.AdminEmpresa && rol != RolUsuario.ManagerDepartamento)
                 return Forbid();
 
             var empresaId = EmpresaIdClaim(); // obtiene empresaId
@@ -99,11 +100,12 @@ namespace TaskControlBackend.Controllers
             return Ok(new { success = true, data = dto }); // retorna tarea
         }
 
-        // PUT /api/tareas/{id}/asignar-manual - asignación manual por empresa
+        // PUT /api/tareas/{id}/asignar-manual - asignación manual (AdminEmpresa o ManagerDepartamento)
         [HttpPut("{id:guid}/asignar-manual")]
         public async Task<IActionResult> AsignarManual(Guid id, [FromBody] AsignarManualTareaDTO dto)
         {
-            if (Rol() != RolUsuario.AdminEmpresa) // solo AdminEmpresa
+            var rol = Rol();
+            if (rol != RolUsuario.AdminEmpresa && rol != RolUsuario.ManagerDepartamento)
                 return Forbid();
 
             var empresaId = EmpresaIdClaim(); // obtiene empresaId
@@ -115,11 +117,12 @@ namespace TaskControlBackend.Controllers
             return Ok(new { success = true, message = "Tarea asignada manualmente" });
         }
 
-        // PUT /api/tareas/{id}/asignar-automatico - asignación automática
+        // PUT /api/tareas/{id}/asignar-automatico - asignación automática (AdminEmpresa o ManagerDepartamento)
         [HttpPut("{id:guid}/asignar-automatico")]
         public async Task<IActionResult> AsignarAutomatico(Guid id, [FromBody] AsignarAutomaticoTareaDTO dto)
         {
-            if (Rol() != RolUsuario.AdminEmpresa) // solo AdminEmpresa
+            var rol = Rol();
+            if (rol != RolUsuario.AdminEmpresa && rol != RolUsuario.ManagerDepartamento)
                 return Forbid();
 
             var empresaId = EmpresaIdClaim(); // obtiene empresaId
@@ -131,24 +134,31 @@ namespace TaskControlBackend.Controllers
             return Ok(new { success = true, message = "Asignación automática ejecutada" });
         }
 
-        // PUT /api/tareas/{id}/aceptar - usuario acepta su tarea
+        // PUT /api/tareas/{id}/aceptar - usuario o manager acepta su tarea
         [HttpPut("{id:guid}/aceptar")]
         public async Task<IActionResult> Aceptar(Guid id)
         {
-            if (Rol() != RolUsuario.Usuario) // solo usuarios
+            var rol = Rol();
+            if (rol != RolUsuario.Usuario && rol != RolUsuario.ManagerDepartamento) // usuarios y managers
                 return Forbid();
 
             var empresaId = EmpresaIdClaim(); // obtiene empresaId
             if (empresaId is null)
                 return BadRequest(new { success = false, message = "EmpresaId no encontrado en el token" });
 
-            await _svc.AceptarAsync(empresaId.Value, id, UserId()); // acepta tarea
-
-            return Ok(new { success = true, message = "Tarea aceptada" });
+            try
+            {
+                await _svc.AceptarAsync(empresaId.Value, id, UserId()); // acepta tarea
+                return Ok(new { success = true, message = "Tarea aceptada" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
         }
         
         // GET /api/tareas/mis
-// Solo para Usuario (trabajador) → devuelve las tareas asignadas a él mismo
+// Para Usuario (trabajador) y ManagerDepartamento → devuelve las tareas asignadas a él mismo
         [HttpGet("mis")]
         public async Task<IActionResult> MisTareas(
             [FromQuery] EstadoTarea? estado,
@@ -156,7 +166,7 @@ namespace TaskControlBackend.Controllers
             [FromQuery] Departamento? departamento)
         {
             var rol = Rol();
-            if (rol != RolUsuario.Usuario)
+            if (rol != RolUsuario.Usuario && rol != RolUsuario.ManagerDepartamento)
                 return Forbid();
 
             var empresaId = EmpresaIdClaim();
@@ -176,11 +186,12 @@ namespace TaskControlBackend.Controllers
             return Ok(new { success = true, data = list });
         }
 
-        // PUT /api/tareas/{id}/finalizar - usuario finaliza tarea
+        // PUT /api/tareas/{id}/finalizar - usuario o manager finaliza tarea
         [HttpPut("{id:guid}/finalizar")]
         public async Task<IActionResult> Finalizar(Guid id, [FromBody] FinalizarTareaDTO dto)
         {
-            if (Rol() != RolUsuario.Usuario) // solo usuarios
+            var rol = Rol();
+            if (rol != RolUsuario.Usuario && rol != RolUsuario.ManagerDepartamento) // usuarios y managers
                 return Forbid();
 
             var empresaId = EmpresaIdClaim(); // obtiene empresaId
@@ -195,11 +206,12 @@ namespace TaskControlBackend.Controllers
             return Ok(new { success = true, message = "Tarea finalizada con evidencia" });
         }
 
-        // PUT /api/tareas/{id}/cancelar - cancelar tarea
+        // PUT /api/tareas/{id}/cancelar - cancelar tarea (AdminEmpresa o ManagerDepartamento)
         [HttpPut("{id:guid}/cancelar")]
         public async Task<IActionResult> Cancelar(Guid id, [FromBody] string? motivo)
         {
-            if (Rol() != RolUsuario.AdminEmpresa) // solo AdminEmpresa
+            var rol = Rol();
+            if (rol != RolUsuario.AdminEmpresa && rol != RolUsuario.ManagerDepartamento)
                 return Forbid();
 
             var empresaId = EmpresaIdClaim(); // obtiene empresaId
@@ -221,7 +233,8 @@ namespace TaskControlBackend.Controllers
         [HttpPut("{id:guid}/reasignar")]
         public async Task<IActionResult> Reasignar(Guid id, [FromBody] ReasignarTareaDTO dto)
         {
-            if (Rol() != RolUsuario.AdminEmpresa) // solo AdminEmpresa
+            var rol = Rol();
+            if (rol != RolUsuario.AdminEmpresa && rol != RolUsuario.ManagerDepartamento)
                 return Forbid();
 
             var empresaId = EmpresaIdClaim(); // obtiene empresaId
@@ -239,6 +252,82 @@ namespace TaskControlBackend.Controllers
             }
 
             return Ok(new { success = true, message = "Tarea reasignada" });
+        }
+
+        // ============================================================
+        // DELEGACIÓN ENTRE JEFES DE ÁREA
+        // ============================================================
+
+        // PUT /api/tareas/{id}/delegar - Delegar tarea a otro jefe
+        [HttpPut("{id:guid}/delegar")]
+        public async Task<IActionResult> DelegarAJefe(Guid id, [FromBody] DelegarTareaDTO dto)
+        {
+            var rol = Rol();
+            if (rol != RolUsuario.AdminEmpresa && rol != RolUsuario.ManagerDepartamento)
+                return Forbid();
+
+            var empresaId = EmpresaIdClaim();
+            if (empresaId is null)
+                return BadRequest(new { success = false, message = "EmpresaId no encontrado en el token" });
+
+            if (!ModelState.IsValid)
+                return UnprocessableEntity(ModelState);
+
+            await _svc.DelegarTareaAJefeAsync(empresaId.Value, id, UserId(), dto);
+
+            return Ok(new 
+            { 
+                success = true, 
+                message = "Tarea delegada exitosamente. Esperando respuesta del jefe destino." 
+            });
+        }
+
+        // PUT /api/tareas/{id}/aceptar-delegacion - Aceptar tarea delegada
+        [HttpPut("{id:guid}/aceptar-delegacion")]
+        public async Task<IActionResult> AceptarDelegacion(Guid id, [FromBody] AceptarDelegacionDTO dto)
+        {
+            var rol = Rol();
+            if (rol != RolUsuario.ManagerDepartamento)
+                return Forbid();
+
+            var empresaId = EmpresaIdClaim();
+            if (empresaId is null)
+                return BadRequest(new { success = false, message = "EmpresaId no encontrado en el token" });
+
+            if (!ModelState.IsValid)
+                return UnprocessableEntity(ModelState);
+
+            await _svc.AceptarDelegacionAsync(empresaId.Value, id, UserId(), dto);
+
+            return Ok(new 
+            { 
+                success = true, 
+                message = "Delegación aceptada. Ahora puedes gestionar esta tarea." 
+            });
+        }
+
+        // PUT /api/tareas/{id}/rechazar-delegacion - Rechazar tarea delegada
+        [HttpPut("{id:guid}/rechazar-delegacion")]
+        public async Task<IActionResult> RechazarDelegacion(Guid id, [FromBody] RechazarDelegacionDTO dto)
+        {
+            var rol = Rol();
+            if (rol != RolUsuario.ManagerDepartamento)
+                return Forbid();
+
+            var empresaId = EmpresaIdClaim();
+            if (empresaId is null)
+                return BadRequest(new { success = false, message = "EmpresaId no encontrado en el token" });
+
+            if (!ModelState.IsValid)
+                return UnprocessableEntity(ModelState);
+
+            await _svc.RechazarDelegacionAsync(empresaId.Value, id, UserId(), dto);
+
+            return Ok(new 
+            { 
+                success = true, 
+                message = "Delegación rechazada. La tarea regresa al jefe de origen." 
+            });
         }
     }
 }

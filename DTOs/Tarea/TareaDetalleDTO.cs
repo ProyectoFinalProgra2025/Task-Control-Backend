@@ -27,6 +27,17 @@ namespace TaskControlBackend.DTOs.Tarea
         public string? EvidenciaTexto { get; set; }
         public string? EvidenciaImagenUrl { get; set; }
 
+        // Información de delegación
+        public bool EstaDelegada { get; set; }
+        public Guid? DelegadoPorUsuarioId { get; set; }
+        public string? DelegadoPorUsuarioNombre { get; set; }
+        public Guid? DelegadoAUsuarioId { get; set; }
+        public string? DelegadoAUsuarioNombre { get; set; }
+        public DateTime? DelegadaAt { get; set; }
+        public bool? DelegacionAceptada { get; set; }
+        public string? MotivoRechazoJefe { get; set; }
+        public DateTime? DelegacionResueltaAt { get; set; }
+
         public DateTime CreatedAt { get; set; }
         public DateTime? FinalizadaAt { get; set; }
         public string? MotivoCancelacion { get; set; }

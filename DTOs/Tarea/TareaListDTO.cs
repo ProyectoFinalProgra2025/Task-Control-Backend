@@ -20,6 +20,15 @@ namespace TaskControlBackend.DTOs.Tarea
         public Guid CreatedByUsuarioId { get; set; }
         public string CreatedByUsuarioNombre { get; set; } = null!;
 
+        // Información de delegación
+        public bool EstaDelegada { get; set; }
+        public Guid? DelegadoPorUsuarioId { get; set; }
+        public string? DelegadoPorUsuarioNombre { get; set; }
+        public Guid? DelegadoAUsuarioId { get; set; }
+        public string? DelegadoAUsuarioNombre { get; set; }
+        public bool? DelegacionAceptada { get; set; }
+        public string? MotivoRechazoJefe { get; set; }
+
         public DateTime CreatedAt { get; set; }
     }
 }

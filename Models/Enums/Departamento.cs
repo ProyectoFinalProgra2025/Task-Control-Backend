@@ -7,6 +7,5 @@ public enum Departamento
     Mantenimiento = 2,
     Produccion = 3,
     Marketing = 4,
-    Logistica = 5,
-    RecursosHumanos = 6
+    Logistica = 5
 }
