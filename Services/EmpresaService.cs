@@ -1,5 +1,7 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using TaskControlBackend.Data;
+using TaskControlBackend.Hubs;
 using TaskControlBackend.Models;
 using TaskControlBackend.Models.Enums;
 using TaskControlBackend.Services.Interfaces;
@@ -12,7 +14,13 @@ namespace TaskControlBackend.Services
     public class EmpresaService : IEmpresaService
     {
         private readonly AppDbContext _db;
-        public EmpresaService(AppDbContext db) => _db = db;
+        private readonly IHubContext<ChatAppHub> _hubContext;
+        
+        public EmpresaService(AppDbContext db, IHubContext<ChatAppHub> hubContext)
+        {
+            _db = db;
+            _hubContext = hubContext;
+        }
 
         // Obtener empresa por Id (solo lectura)
         public Task<Empresa?> GetByIdAsync(Guid id) =>
@@ -47,6 +55,15 @@ namespace TaskControlBackend.Services
             _db.Empresas.Add(e);
             await _db.SaveChangesAsync();
 
+            // Emit SignalR event for new empresa
+            await _hubContext.Clients.Group("super_admin").SendAsync("empresa:created", new
+            {
+                id = e.Id,
+                nombre = e.Nombre,
+                estado = e.Estado.ToString(),
+                createdAt = e.CreatedAt
+            });
+
             return e.Id;
         }
 
@@ -60,6 +77,15 @@ namespace TaskControlBackend.Services
             e.UpdatedAt = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
+
+            // Emit SignalR event for empresa approval
+            await _hubContext.Clients.Group("super_admin").SendAsync("empresa:approved", new
+            {
+                id = e.Id,
+                nombre = e.Nombre,
+                estado = e.Estado.ToString(),
+                updatedAt = e.UpdatedAt
+            });
         }
 
         // Rechazar empresa
@@ -72,6 +98,15 @@ namespace TaskControlBackend.Services
             e.UpdatedAt = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
+
+            // Emit SignalR event for empresa rejection
+            await _hubContext.Clients.Group("super_admin").SendAsync("empresa:rejected", new
+            {
+                id = e.Id,
+                nombre = e.Nombre,
+                estado = e.Estado.ToString(),
+                updatedAt = e.UpdatedAt
+            });
 
             // TODO: registrar motivo en tabla de auditoría si se implementa
         }
