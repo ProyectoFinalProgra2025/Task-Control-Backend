@@ -16,15 +16,18 @@ namespace TaskControlBackend.Services.Interfaces
         Task UpdateAsync(Guid empresaId, Guid tareaId, UpdateTareaDTO dto);
 
         // 🔹 NUEVOS
-        Task AsignarManualAsync(Guid empresaId, Guid tareaId, AsignarManualTareaDTO dto);
+        Task AsignarManualAsync(Guid empresaId, Guid tareaId, Guid assignedByUserId, AsignarManualTareaDTO dto);
         Task AsignarAutomaticamenteAsync(Guid empresaId, Guid tareaId, bool forzarReasignacion);
 
         Task AceptarAsync(Guid empresaId, Guid tareaId, Guid usuarioId);
         Task FinalizarAsync(Guid empresaId, Guid tareaId, Guid usuarioId, FinalizarTareaDTO dto);
         Task CancelarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, string? motivo);
 
-        // Si quieres seguir teniendo un "reasignar" genérico, puede reutilizar las anteriores:
-        Task ReasignarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, Guid? nuevoUsuarioId, bool asignacionAutomatica);
+        // Reasignar tarea (diferente de asignación inicial)
+        Task ReasignarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, Guid? nuevoUsuarioId, bool asignacionAutomatica, string? motivo = null);
+
+        // Historial de asignaciones
+        Task<List<TareaAsignacionHistorialDTO>> GetHistorialAsignacionesAsync(Guid tareaId);
 
         // 🔹 DELEGACIÓN ENTRE JEFES
         Task DelegarTareaAJefeAsync(Guid empresaId, Guid tareaId, Guid jefeOrigenId, DelegarTareaDTO dto);

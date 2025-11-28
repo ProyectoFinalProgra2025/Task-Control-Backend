@@ -16,7 +16,8 @@ public class AppDbContext : DbContext
     
     public DbSet<Tarea> Tareas { get; set; } = null!;
     public DbSet<TareaCapacidadRequerida> TareasCapacidadesRequeridas { get; set; } = null!;
-    
+    public DbSet<TareaAsignacionHistorial> TareasAsignacionesHistorial { get; set; } = null!;
+
     // Chat entities
     public DbSet<Chat> Chats => Set<Chat>();
     public DbSet<ChatMember> ChatMembers => Set<ChatMember>();

@@ -118,38 +118,69 @@ namespace TaskControlBackend.Services
             if (empresa is null)
                 throw new KeyNotFoundException("Empresa no encontrada");
 
-            // Usuarios asociados
-            var usuarios = await _db.Usuarios
-                .Where(u => u.EmpresaId == empresaId)
-                .ToListAsync();
+            // Usar transacción para garantizar atomicidad
+            using var transaction = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                // Usuarios asociados
+                var usuarios = await _db.Usuarios
+                    .Where(u => u.EmpresaId == empresaId)
+                    .ToListAsync();
 
-            // RefreshTokens de esos usuarios
-            var userIds = usuarios.Select(u => u.Id).ToList();
-            var tokens = await _db.RefreshTokens
-                .Where(rt => userIds.Contains(rt.UsuarioId))
-                .ToListAsync();
+                var userIds = usuarios.Select(u => u.Id).ToList();
 
-            // Capacidades de la empresa
-            var capacidades = await _db.Capacidades
-                .Where(c => c.EmpresaId == empresaId)
-                .ToListAsync();
+                // RefreshTokens de esos usuarios
+                var tokens = await _db.RefreshTokens
+                    .Where(rt => userIds.Contains(rt.UsuarioId))
+                    .ToListAsync();
 
-            // Relación Usuario-Capacidad
-            var capacidadIds = capacidades.Select(c => c.Id).ToList();
-            var usuarioCapacidades = await _db.UsuarioCapacidades
-                .Where(uc => capacidadIds.Contains(uc.CapacidadId))
-                .ToListAsync();
+                // Capacidades de la empresa
+                var capacidades = await _db.Capacidades
+                    .Where(c => c.EmpresaId == empresaId)
+                    .ToListAsync();
 
-            // TODO: agregar eliminación de tareas, chats u otras relaciones según implementación
+                var capacidadIds = capacidades.Select(c => c.Id).ToList();
 
-            // Eliminación en orden para mantener integridad referencial
-            _db.UsuarioCapacidades.RemoveRange(usuarioCapacidades);
-            _db.Capacidades.RemoveRange(capacidades);
-            _db.RefreshTokens.RemoveRange(tokens);
-            _db.Usuarios.RemoveRange(usuarios);
-            _db.Empresas.Remove(empresa);
+                // Relación Usuario-Capacidad
+                var usuarioCapacidades = await _db.UsuarioCapacidades
+                    .Where(uc => capacidadIds.Contains(uc.CapacidadId))
+                    .ToListAsync();
 
-            await _db.SaveChangesAsync();
+                // Tareas de la empresa
+                var tareas = await _db.Tareas
+                    .Where(t => t.EmpresaId == empresaId)
+                    .ToListAsync();
+
+                var tareaIds = tareas.Select(t => t.Id).ToList();
+
+                // Capacidades requeridas de tareas
+                var tareaCapacidades = await _db.Set<TareaCapacidadRequerida>()
+                    .Where(tc => tareaIds.Contains(tc.TareaId))
+                    .ToListAsync();
+
+                // Historial de asignaciones
+                var historialAsignaciones = await _db.TareasAsignacionesHistorial
+                    .Where(h => tareaIds.Contains(h.TareaId))
+                    .ToListAsync();
+
+                // Eliminación en orden para mantener integridad referencial
+                _db.TareasAsignacionesHistorial.RemoveRange(historialAsignaciones);
+                _db.Set<TareaCapacidadRequerida>().RemoveRange(tareaCapacidades);
+                _db.Tareas.RemoveRange(tareas);
+                _db.UsuarioCapacidades.RemoveRange(usuarioCapacidades);
+                _db.Capacidades.RemoveRange(capacidades);
+                _db.RefreshTokens.RemoveRange(tokens);
+                _db.Usuarios.RemoveRange(usuarios);
+                _db.Empresas.Remove(empresa);
+
+                await _db.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
     }
 }

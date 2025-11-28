@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using TaskControlBackend.Data;
 using TaskControlBackend.DTOs.Chat;
+using TaskControlBackend.Helpers;
 using TaskControlBackend.Hubs;
 using TaskControlBackend.Models.Chat;
 using TaskControlBackend.Models.Enums;
@@ -26,6 +27,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IEmpresaService, EmpresaService>();
 builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<ITareaService, TareaService>();
+builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddControllers();
 
 // SignalR

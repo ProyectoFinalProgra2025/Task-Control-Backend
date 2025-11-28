@@ -2,6 +2,9 @@ using TaskControlBackend.Models.Enums;
 
 namespace TaskControlBackend.DTOs.Tarea
 {
+    /// <summary>
+    /// DTO optimizado para listados de tareas - solo campos esenciales
+    /// </summary>
     public class TareaListDTO
     {
         public Guid Id { get; set; }
@@ -13,21 +16,16 @@ namespace TaskControlBackend.DTOs.Tarea
         public DateTime? DueDate { get; set; }
         public Departamento? Departamento { get; set; }
 
+        // Asignación básica
         public Guid? AsignadoAUsuarioId { get; set; }
         public string? AsignadoAUsuarioNombre { get; set; }
-        
-        // Información del creador para sistema de chat
+
+        // Creador (útil para filtros y referencias)
         public Guid CreatedByUsuarioId { get; set; }
         public string CreatedByUsuarioNombre { get; set; } = null!;
 
-        // Información de delegación
+        // Indicador simple de delegación (si necesitas mostrar un badge/icon)
         public bool EstaDelegada { get; set; }
-        public Guid? DelegadoPorUsuarioId { get; set; }
-        public string? DelegadoPorUsuarioNombre { get; set; }
-        public Guid? DelegadoAUsuarioId { get; set; }
-        public string? DelegadoAUsuarioNombre { get; set; }
-        public bool? DelegacionAceptada { get; set; }
-        public string? MotivoRechazoJefe { get; set; }
 
         public DateTime CreatedAt { get; set; }
     }

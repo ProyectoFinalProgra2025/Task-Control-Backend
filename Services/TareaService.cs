@@ -26,6 +26,38 @@ namespace TaskControlBackend.Services
         private int MaxTareasActivasPorUsuario =>
             int.TryParse(_config["AppSettings:MaxTareasActivasPorUsuario"], out var v) ? v : 5;
 
+        /// <summary>
+        /// Emite evento SignalR solo al grupo de empresa (AdminGeneral ya está incluido si está conectado)
+        /// </summary>
+        private async Task EmitTareaEventAsync(Guid empresaId, string eventName, object payload)
+        {
+            await _hubContext.Clients.Group($"empresa_{empresaId}").SendAsync(eventName, payload);
+        }
+
+        /// <summary>
+        /// Registra en el historial una asignación de tarea.
+        /// NOTA: Solo agrega al contexto, no guarda. El caller debe hacer SaveChangesAsync.
+        /// </summary>
+        private void RegistrarAsignacionEnHistorial(
+            Guid tareaId,
+            Guid? asignadoAUsuarioId,
+            Guid? asignadoPorUsuarioId,
+            TipoAsignacion tipoAsignacion,
+            string? motivo = null)
+        {
+            var historial = new TareaAsignacionHistorial
+            {
+                TareaId = tareaId,
+                AsignadoAUsuarioId = asignadoAUsuarioId,
+                AsignadoPorUsuarioId = asignadoPorUsuarioId,
+                TipoAsignacion = tipoAsignacion,
+                Motivo = motivo,
+                FechaAsignacion = DateTime.UtcNow
+            };
+
+            _db.TareasAsignacionesHistorial.Add(historial);
+        }
+
         // ============================================================
         // 5.1  CREAR TAREA (NO ASIGNA)
         // ============================================================
@@ -65,20 +97,8 @@ namespace TaskControlBackend.Services
             _db.Tareas.Add(tarea);
             await _db.SaveChangesAsync();
 
-            // Emit SignalR event for real-time updates
-            await _hubContext.Clients.Group($"empresa_{empresaId}").SendAsync("tarea:created", new
-            {
-                id = tarea.Id,
-                titulo = tarea.Titulo,
-                empresaId = tarea.EmpresaId,
-                estado = tarea.Estado.ToString(),
-                prioridad = tarea.Prioridad.ToString(),
-                departamento = tarea.Departamento?.ToString(),
-                createdAt = tarea.CreatedAt
-            });
-
-            // Also notify super admins
-            await _hubContext.Clients.Group("super_admin").SendAsync("tarea:created", new
+            // Emit SignalR event
+            await EmitTareaEventAsync(empresaId, "tarea:created", new
             {
                 id = tarea.Id,
                 titulo = tarea.Titulo,
@@ -95,7 +115,7 @@ namespace TaskControlBackend.Services
         // ============================================================
         // 5.2  ASIGNACIÓN MANUAL (con validación de departamento para jefes)
         // ============================================================
-        public async Task AsignarManualAsync(Guid empresaId, Guid tareaId, AsignarManualTareaDTO dto)
+        public async Task AsignarManualAsync(Guid empresaId, Guid tareaId, Guid assignedByUserId, AsignarManualTareaDTO dto)
         {
             var tarea = await _db.Tareas
                 .Include(t => t.CapacidadesRequeridas)
@@ -187,21 +207,18 @@ namespace TaskControlBackend.Services
             tarea.Estado = EstadoTarea.Asignada;
             tarea.UpdatedAt = DateTime.UtcNow;
 
+            // Registrar en historial (asignación manual con auditoría completa)
+            RegistrarAsignacionEnHistorial(
+                tareaId,
+                usuario.Id,
+                assignedByUserId,
+                TipoAsignacion.Manual
+            );
+
             await _db.SaveChangesAsync();
 
             // Emit SignalR event for task assignment
-            await _hubContext.Clients.Group($"empresa_{empresaId}").SendAsync("tarea:assigned", new
-            {
-                id = tarea.Id,
-                titulo = tarea.Titulo,
-                estado = tarea.Estado.ToString(),
-                asignadoAUsuarioId = tarea.AsignadoAUsuarioId,
-                asignadoANombre = usuario.NombreCompleto,
-                updatedAt = tarea.UpdatedAt
-            });
-
-            // Notify super admins
-            await _hubContext.Clients.Group("super_admin").SendAsync("tarea:assigned", new
+            await EmitTareaEventAsync(empresaId, "tarea:assigned", new
             {
                 id = tarea.Id,
                 titulo = tarea.Titulo,
@@ -241,15 +258,24 @@ namespace TaskControlBackend.Services
             await _db.SaveChangesAsync();
         }
 
+        /// <summary>
+        /// Algoritmo mejorado de asignación automática que considera:
+        /// - Capacidades requeridas
+        /// - Departamento del worker
+        /// - Carga actual de trabajo
+        /// - Nivel de habilidad
+        /// - Balance de carga entre workers
+        /// </summary>
         private async Task AsignarAutomaticamenteInternoAsync(Tarea tarea)
         {
-            if (tarea.Departamento == null || !tarea.CapacidadesRequeridas.Any())
+            if (tarea.Departamento == null)
                 return;
 
             var reqCaps = tarea.CapacidadesRequeridas
                 .Select(cr => cr.Nombre.Trim().ToLower())
                 .ToList();
 
+            // Obtener candidatos del departamento correcto
             var candidatos = await _db.Usuarios
                 .Include(u => u.UsuarioCapacidades).ThenInclude(uc => uc.Capacidad)
                 .Where(u => u.EmpresaId == tarea.EmpresaId &&
@@ -258,7 +284,22 @@ namespace TaskControlBackend.Services
                             u.Departamento == tarea.Departamento)
                 .ToListAsync();
 
-            var candidatosValidos = new List<(Usuario usuario, int carga)>();
+            if (!candidatos.Any())
+                return;
+
+            // OPTIMIZACIÓN: Cargar la carga de trabajo de todos los candidatos en una sola query
+            var candidatoIds = candidatos.Select(c => c.Id).ToList();
+            var cargasPorUsuario = await _db.Tareas
+                .Where(t => t.EmpresaId == tarea.EmpresaId &&
+                            t.AsignadoAUsuarioId.HasValue &&
+                            candidatoIds.Contains(t.AsignadoAUsuarioId.Value) &&
+                            (t.Estado == EstadoTarea.Asignada || t.Estado == EstadoTarea.Aceptada))
+                .GroupBy(t => t.AsignadoAUsuarioId)
+                .Select(g => new { UsuarioId = g.Key!.Value, Count = g.Count() })
+                .ToDictionaryAsync(x => x.UsuarioId, x => x.Count);
+
+            // Calcular score para cada candidato
+            var candidatosConScore = new List<(Usuario usuario, int carga, int score, bool matchPerfecto)>();
 
             foreach (var u in candidatos)
             {
@@ -266,31 +307,66 @@ namespace TaskControlBackend.Services
                     .Select(uc => uc.Capacidad.Nombre.Trim().ToLower())
                     .ToHashSet();
 
-                if (!reqCaps.All(rc => capsUsuario.Contains(rc)))
-                    continue;
+                // Si la tarea requiere capacidades, validar match
+                bool matchPerfecto = true;
+                if (reqCaps.Any())
+                {
+                    if (!reqCaps.All(rc => capsUsuario.Contains(rc)))
+                        continue; // No cumple skills requeridos
 
-                var activas = await _db.Tareas.CountAsync(t =>
-                    t.EmpresaId == tarea.EmpresaId &&
-                    t.AsignadoAUsuarioId == u.Id &&
-                    (t.Estado == EstadoTarea.Asignada || t.Estado == EstadoTarea.Aceptada));
+                    // Match perfecto si tiene exactamente las capacidades requeridas (no más, no menos)
+                    matchPerfecto = capsUsuario.SetEquals(new HashSet<string>(reqCaps));
+                }
+
+                // Obtener carga de trabajo del diccionario precargado
+                var activas = cargasPorUsuario.GetValueOrDefault(u.Id, 0);
 
                 if (activas >= MaxTareasActivasPorUsuario)
-                    continue;
+                    continue; // Sobrecargado
 
-                candidatosValidos.Add((u, activas));
+                // Calcular score (mayor es mejor)
+                int score = 100;
+
+                // Penalizar por carga de trabajo (menos tareas = mejor)
+                score -= activas * 20;
+
+                // Bonus por nivel de habilidad
+                if (u.NivelHabilidad.HasValue)
+                    score += u.NivelHabilidad.Value * 5;
+
+                // Bonus si es match perfecto de skills
+                if (matchPerfecto)
+                    score += 30;
+
+                // Bonus por prioridad de tarea (tareas urgentes a workers menos ocupados)
+                if (tarea.Prioridad == PrioridadTarea.High && activas == 0)
+                    score += 50;
+
+                candidatosConScore.Add((u, activas, score, matchPerfecto));
             }
 
-            if (!candidatosValidos.Any())
+            if (!candidatosConScore.Any())
                 return;
 
-            var elegido = candidatosValidos
-                .OrderBy(c => c.carga)
+            // Ordenar por score (mayor primero), luego por carga (menor primero)
+            var elegido = candidatosConScore
+                .OrderByDescending(c => c.score)
+                .ThenBy(c => c.carga)
                 .ThenBy(c => c.usuario.Id)
                 .First().usuario;
 
             tarea.AsignadoAUsuarioId = elegido.Id;
             tarea.Estado = EstadoTarea.Asignada;
             tarea.UpdatedAt = DateTime.UtcNow;
+
+            // Registrar en historial (asignación automática, no hay quien asigna)
+            RegistrarAsignacionEnHistorial(
+                tarea.Id,
+                elegido.Id,
+                null, // Sistema automático
+                TipoAsignacion.Automatica,
+                $"Score: {candidatosConScore.First(c => c.usuario.Id == elegido.Id).score}"
+            );
         }
 
         // ============================================================
@@ -303,8 +379,6 @@ namespace TaskControlBackend.Services
             var q = _db.Tareas
                 .Include(t => t.AsignadoAUsuario)
                 .Include(t => t.CreatedByUsuario)
-                .Include(t => t.DelegadoAUsuario)
-                .Include(t => t.DelegadoPorUsuario)
                 .AsNoTracking()
                 .Where(t => t.EmpresaId == empresaId && t.IsActive);
 
@@ -343,12 +417,6 @@ namespace TaskControlBackend.Services
                     CreatedByUsuarioId = t.CreatedByUsuarioId,
                     CreatedByUsuarioNombre = t.CreatedByUsuario != null ? t.CreatedByUsuario.NombreCompleto : string.Empty,
                     EstaDelegada = t.EstaDelegada,
-                    DelegadoPorUsuarioId = t.DelegadoPorUsuarioId,
-                    DelegadoPorUsuarioNombre = t.DelegadoPorUsuario != null ? t.DelegadoPorUsuario.NombreCompleto : null,
-                    DelegadoAUsuarioId = t.DelegadoAUsuarioId,
-                    DelegadoAUsuarioNombre = t.DelegadoAUsuario != null ? t.DelegadoAUsuario.NombreCompleto : null,
-                    DelegacionAceptada = t.DelegacionAceptada,
-                    MotivoRechazoJefe = t.MotivoRechazoJefe,
                     CreatedAt = t.CreatedAt
                 }).ToListAsync();
         }
@@ -456,20 +524,11 @@ namespace TaskControlBackend.Services
             await _db.SaveChangesAsync();
 
             // Emit SignalR event for task acceptance
-            await _hubContext.Clients.Group($"empresa_{empresaId}").SendAsync("tarea:accepted", new
+            await EmitTareaEventAsync(empresaId, "tarea:accepted", new
             {
                 id = t.Id,
                 titulo = t.Titulo,
-                estado = t.Estado.ToString(),
-                asignadoAUsuarioId = t.AsignadoAUsuarioId,
-                updatedAt = t.UpdatedAt
-            });
-
-            await _hubContext.Clients.Group("super_admin").SendAsync("tarea:accepted", new
-            {
-                id = t.Id,
-                titulo = t.Titulo,
-                empresaId = t.EmpresaId,
+                empresaId,
                 estado = t.Estado.ToString(),
                 asignadoAUsuarioId = t.AsignadoAUsuarioId,
                 updatedAt = t.UpdatedAt
@@ -499,21 +558,11 @@ namespace TaskControlBackend.Services
             await _db.SaveChangesAsync();
 
             // Emit SignalR event for task completion
-            await _hubContext.Clients.Group($"empresa_{empresaId}").SendAsync("tarea:completed", new
+            await EmitTareaEventAsync(empresaId, "tarea:completed", new
             {
                 id = t.Id,
                 titulo = t.Titulo,
-                estado = t.Estado.ToString(),
-                asignadoAUsuarioId = t.AsignadoAUsuarioId,
-                finalizadaAt = t.FinalizadaAt,
-                updatedAt = t.UpdatedAt
-            });
-
-            await _hubContext.Clients.Group("super_admin").SendAsync("tarea:completed", new
-            {
-                id = t.Id,
-                titulo = t.Titulo,
-                empresaId = t.EmpresaId,
+                empresaId,
                 estado = t.Estado.ToString(),
                 asignadoAUsuarioId = t.AsignadoAUsuarioId,
                 finalizadaAt = t.FinalizadaAt,
@@ -555,9 +604,9 @@ namespace TaskControlBackend.Services
         }
 
         // ============================================================
-        // REASIGNAR
+        // REASIGNAR (diferente de asignación inicial)
         // ============================================================
-        public async Task ReasignarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, Guid? nuevoUsuarioId, bool asignacionAutomatica)
+        public async Task ReasignarAsync(Guid empresaId, Guid tareaId, Guid adminEmpresaId, Guid? nuevoUsuarioId, bool asignacionAutomatica, string? motivo = null)
         {
             var t = await _db.Tareas
                 .Include(t => t.CapacidadesRequeridas)
@@ -568,23 +617,94 @@ namespace TaskControlBackend.Services
             if (t.Estado == EstadoTarea.Finalizada || t.Estado == EstadoTarea.Cancelada)
                 throw new InvalidOperationException("No se pueden reasignar tareas finalizadas o canceladas");
 
+            // Guardar usuario anterior
+            var usuarioAnteriorId = t.AsignadoAUsuarioId;
+
+            // Limpiar asignación anterior
             t.AsignadoAUsuarioId = null;
             t.Estado = EstadoTarea.Pendiente;
 
             if (nuevoUsuarioId.HasValue)
             {
-                await AsignarManualAsync(empresaId, tareaId, new AsignarManualTareaDTO
-                {
-                    UsuarioId = nuevoUsuarioId
-                });
+                // Asignar manualmente al nuevo usuario
+                var nuevoUsuario = await _db.Usuarios.FirstOrDefaultAsync(u =>
+                    u.Id == nuevoUsuarioId.Value &&
+                    u.EmpresaId == empresaId &&
+                    u.IsActive);
+
+                if (nuevoUsuario is null)
+                    throw new KeyNotFoundException("Usuario destino no encontrado");
+
+                t.AsignadoAUsuarioId = nuevoUsuario.Id;
+                t.Estado = EstadoTarea.Asignada;
+
+                // Registrar reasignación en historial
+                RegistrarAsignacionEnHistorial(
+                    tareaId,
+                    nuevoUsuario.Id,
+                    adminEmpresaId,
+                    TipoAsignacion.Reasignacion,
+                    motivo ?? $"Reasignado de {usuarioAnteriorId} a {nuevoUsuario.Id}"
+                );
             }
             else if (asignacionAutomatica)
             {
-                await AsignarAutomaticamenteAsync(empresaId, tareaId, false);
+                await AsignarAutomaticamenteInternoAsync(t);
+
+                // Registrar reasignación automática
+                if (t.AsignadoAUsuarioId.HasValue)
+                {
+                    RegistrarAsignacionEnHistorial(
+                        tareaId,
+                        t.AsignadoAUsuarioId,
+                        adminEmpresaId,
+                        TipoAsignacion.Reasignacion,
+                        motivo ?? "Reasignación automática"
+                    );
+                }
             }
 
             t.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
+
+            // Emitir evento de reasignación
+            if (t.AsignadoAUsuarioId.HasValue)
+            {
+                await EmitTareaEventAsync(empresaId, "tarea:reasignada", new
+                {
+                    id = t.Id,
+                    titulo = t.Titulo,
+                    empresaId,
+                    usuarioAnteriorId,
+                    nuevoUsuarioId = t.AsignadoAUsuarioId,
+                    motivo,
+                    updatedAt = t.UpdatedAt
+                });
+            }
+        }
+
+        // ============================================================
+        // HISTORIAL DE ASIGNACIONES
+        // ============================================================
+        public async Task<List<TareaAsignacionHistorialDTO>> GetHistorialAsignacionesAsync(Guid tareaId)
+        {
+            return await _db.TareasAsignacionesHistorial
+                .Include(h => h.AsignadoAUsuario)
+                .Include(h => h.AsignadoPorUsuario)
+                .Where(h => h.TareaId == tareaId)
+                .OrderByDescending(h => h.FechaAsignacion)
+                .Select(h => new TareaAsignacionHistorialDTO
+                {
+                    Id = h.Id,
+                    AsignadoAUsuarioId = h.AsignadoAUsuarioId,
+                    AsignadoAUsuarioNombre = h.AsignadoAUsuario != null ? h.AsignadoAUsuario.NombreCompleto : null,
+                    AsignadoPorUsuarioId = h.AsignadoPorUsuarioId,
+                    AsignadoPorUsuarioNombre = h.AsignadoPorUsuario != null ? h.AsignadoPorUsuario.NombreCompleto : "Sistema",
+                    TipoAsignacion = h.TipoAsignacion.ToString(),
+                    Motivo = h.Motivo,
+                    FechaAsignacion = h.FechaAsignacion
+                })
+                .ToListAsync();
         }
 
         // ============================================================
