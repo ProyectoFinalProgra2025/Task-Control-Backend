@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using TaskControlBackend.Data;
 using TaskControlBackend.DTOs.Tarea;
+using TaskControlBackend.Hubs;
 using TaskControlBackend.Models;
 using TaskControlBackend.Models.Enums;
 using TaskControlBackend.Services.Interfaces;
@@ -12,11 +14,13 @@ namespace TaskControlBackend.Services
     {
         private readonly AppDbContext _db;
         private readonly IConfiguration _config;
+        private readonly IHubContext<ChatAppHub> _hubContext;
 
-        public TareaService(AppDbContext db, IConfiguration config)
+        public TareaService(AppDbContext db, IConfiguration config, IHubContext<ChatAppHub> hubContext)
         {
             _db = db;
             _config = config;
+            _hubContext = hubContext;
         }
 
         private int MaxTareasActivasPorUsuario =>
@@ -60,6 +64,31 @@ namespace TaskControlBackend.Services
 
             _db.Tareas.Add(tarea);
             await _db.SaveChangesAsync();
+
+            // Emit SignalR event for real-time updates
+            await _hubContext.Clients.Group($"empresa_{empresaId}").SendAsync("tarea:created", new
+            {
+                id = tarea.Id,
+                titulo = tarea.Titulo,
+                empresaId = tarea.EmpresaId,
+                estado = tarea.Estado.ToString(),
+                prioridad = tarea.Prioridad.ToString(),
+                departamento = tarea.Departamento?.ToString(),
+                createdAt = tarea.CreatedAt
+            });
+
+            // Also notify super admins
+            await _hubContext.Clients.Group("super_admin").SendAsync("tarea:created", new
+            {
+                id = tarea.Id,
+                titulo = tarea.Titulo,
+                empresaId = tarea.EmpresaId,
+                estado = tarea.Estado.ToString(),
+                prioridad = tarea.Prioridad.ToString(),
+                departamento = tarea.Departamento?.ToString(),
+                createdAt = tarea.CreatedAt
+            });
+
             return tarea.Id;
         }
 
@@ -159,6 +188,29 @@ namespace TaskControlBackend.Services
             tarea.UpdatedAt = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
+
+            // Emit SignalR event for task assignment
+            await _hubContext.Clients.Group($"empresa_{empresaId}").SendAsync("tarea:assigned", new
+            {
+                id = tarea.Id,
+                titulo = tarea.Titulo,
+                estado = tarea.Estado.ToString(),
+                asignadoAUsuarioId = tarea.AsignadoAUsuarioId,
+                asignadoANombre = usuario.NombreCompleto,
+                updatedAt = tarea.UpdatedAt
+            });
+
+            // Notify super admins
+            await _hubContext.Clients.Group("super_admin").SendAsync("tarea:assigned", new
+            {
+                id = tarea.Id,
+                titulo = tarea.Titulo,
+                empresaId = tarea.EmpresaId,
+                estado = tarea.Estado.ToString(),
+                asignadoAUsuarioId = tarea.AsignadoAUsuarioId,
+                asignadoANombre = usuario.NombreCompleto,
+                updatedAt = tarea.UpdatedAt
+            });
         }
 
         // ============================================================
@@ -397,11 +449,31 @@ namespace TaskControlBackend.Services
                 throw new UnauthorizedAccessException("No eres el usuario asignado a esta tarea");
             
             if (t.Estado != EstadoTarea.Asignada)
-                throw new InvalidOperationException("Solo se pueden aceptar tareas en estado Asignada");
+                throw new InvalidOperationException("La tarea debe estar en estado Asignada");
 
             t.Estado = EstadoTarea.Aceptada;
             t.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
+
+            // Emit SignalR event for task acceptance
+            await _hubContext.Clients.Group($"empresa_{empresaId}").SendAsync("tarea:accepted", new
+            {
+                id = t.Id,
+                titulo = t.Titulo,
+                estado = t.Estado.ToString(),
+                asignadoAUsuarioId = t.AsignadoAUsuarioId,
+                updatedAt = t.UpdatedAt
+            });
+
+            await _hubContext.Clients.Group("super_admin").SendAsync("tarea:accepted", new
+            {
+                id = t.Id,
+                titulo = t.Titulo,
+                empresaId = t.EmpresaId,
+                estado = t.Estado.ToString(),
+                asignadoAUsuarioId = t.AsignadoAUsuarioId,
+                updatedAt = t.UpdatedAt
+            });
         }
 
         // ============================================================
@@ -425,6 +497,28 @@ namespace TaskControlBackend.Services
             t.UpdatedAt = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
+
+            // Emit SignalR event for task completion
+            await _hubContext.Clients.Group($"empresa_{empresaId}").SendAsync("tarea:completed", new
+            {
+                id = t.Id,
+                titulo = t.Titulo,
+                estado = t.Estado.ToString(),
+                asignadoAUsuarioId = t.AsignadoAUsuarioId,
+                finalizadaAt = t.FinalizadaAt,
+                updatedAt = t.UpdatedAt
+            });
+
+            await _hubContext.Clients.Group("super_admin").SendAsync("tarea:completed", new
+            {
+                id = t.Id,
+                titulo = t.Titulo,
+                empresaId = t.EmpresaId,
+                estado = t.Estado.ToString(),
+                asignadoAUsuarioId = t.AsignadoAUsuarioId,
+                finalizadaAt = t.FinalizadaAt,
+                updatedAt = t.UpdatedAt
+            });
         }
 
         // ============================================================
