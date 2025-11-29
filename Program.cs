@@ -41,7 +41,9 @@ builder.Services.AddCors(options =>
             .SetIsOriginAllowed(origin => 
                 origin.StartsWith("http://localhost") || 
                 origin.StartsWith("https://localhost") ||
-                origin == "https://taskcontrol.work")
+                origin == "https://taskcontrol.work" || 
+                origin == "https://api.taskcontrol.work" || 
+                origin == "https://dashboard.taskcontrol.work")
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials();
@@ -107,7 +109,11 @@ builder.Services.AddSwaggerGen(c =>
 });
 
 var app = builder.Build();
-
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
 // Swagger
 app.UseSwagger();
 app.UseSwaggerUI();
