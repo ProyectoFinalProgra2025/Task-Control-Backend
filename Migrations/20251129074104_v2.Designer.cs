@@ -12,8 +12,8 @@ using TaskControlBackend.Data;
 namespace TaskControlBackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251123214055_InitialWithDelegation")]
-    partial class InitialWithDelegation
+    [Migration("20251129074104_v2")]
+    partial class v2
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -119,6 +119,14 @@ namespace TaskControlBackend.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsRead")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTimeOffset?>("ReadAt")
                         .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("SenderId")
@@ -310,6 +318,41 @@ namespace TaskControlBackend.Migrations
                     b.ToTable("Tareas", (string)null);
                 });
 
+            modelBuilder.Entity("TaskControlBackend.Models.TareaAsignacionHistorial", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AsignadoAUsuarioId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AsignadoPorUsuarioId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("FechaAsignacion")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Motivo")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TareaId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("TipoAsignacion")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AsignadoAUsuarioId");
+
+                    b.HasIndex("AsignadoPorUsuarioId");
+
+                    b.HasIndex("TareaId");
+
+                    b.ToTable("TareasAsignacionesHistorial");
+                });
+
             modelBuilder.Entity("TaskControlBackend.Models.TareaCapacidadRequerida", b =>
                 {
                     b.Property<Guid>("Id")
@@ -425,7 +468,8 @@ namespace TaskControlBackend.Migrations
                 {
                     b.HasOne("TaskControlBackend.Models.Usuario", "CreatedBy")
                         .WithMany()
-                        .HasForeignKey("CreatedById");
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("CreatedBy");
                 });
@@ -460,7 +504,7 @@ namespace TaskControlBackend.Migrations
                     b.HasOne("TaskControlBackend.Models.Usuario", "Sender")
                         .WithMany()
                         .HasForeignKey("SenderId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Chat");
@@ -517,6 +561,29 @@ namespace TaskControlBackend.Migrations
                     b.Navigation("DelegadoPorUsuario");
 
                     b.Navigation("Empresa");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.TareaAsignacionHistorial", b =>
+                {
+                    b.HasOne("TaskControlBackend.Models.Usuario", "AsignadoAUsuario")
+                        .WithMany()
+                        .HasForeignKey("AsignadoAUsuarioId");
+
+                    b.HasOne("TaskControlBackend.Models.Usuario", "AsignadoPorUsuario")
+                        .WithMany()
+                        .HasForeignKey("AsignadoPorUsuarioId");
+
+                    b.HasOne("TaskControlBackend.Models.Tarea", "Tarea")
+                        .WithMany()
+                        .HasForeignKey("TareaId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AsignadoAUsuario");
+
+                    b.Navigation("AsignadoPorUsuario");
+
+                    b.Navigation("Tarea");
                 });
 
             modelBuilder.Entity("TaskControlBackend.Models.TareaCapacidadRequerida", b =>

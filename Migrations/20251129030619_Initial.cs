@@ -96,7 +96,8 @@ namespace TaskControlBackend.Migrations
                         name: "FK_Chats_Usuarios_CreatedById",
                         column: x => x.CreatedById,
                         principalTable: "Usuarios",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -247,7 +248,7 @@ namespace TaskControlBackend.Migrations
                     SenderId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Body = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    IsRead = table.Column<bool>(type: "bit", nullable: false),
+                    IsRead = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
                     ReadAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
                 },
                 constraints: table =>
@@ -264,7 +265,40 @@ namespace TaskControlBackend.Migrations
                         column: x => x.SenderId,
                         principalTable: "Usuarios",
                         principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "TareasAsignacionesHistorial",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    TareaId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    AsignadoAUsuarioId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    AsignadoPorUsuarioId = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
+                    TipoAsignacion = table.Column<int>(type: "int", nullable: false),
+                    Motivo = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    FechaAsignacion = table.Column<DateTime>(type: "datetime2", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TareasAsignacionesHistorial", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_TareasAsignacionesHistorial_Tareas_TareaId",
+                        column: x => x.TareaId,
+                        principalTable: "Tareas",
+                        principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_TareasAsignacionesHistorial_Usuarios_AsignadoAUsuarioId",
+                        column: x => x.AsignadoAUsuarioId,
+                        principalTable: "Usuarios",
+                        principalColumn: "Id");
+                    table.ForeignKey(
+                        name: "FK_TareasAsignacionesHistorial_Usuarios_AsignadoPorUsuarioId",
+                        column: x => x.AsignadoPorUsuarioId,
+                        principalTable: "Usuarios",
+                        principalColumn: "Id");
                 });
 
             migrationBuilder.CreateTable(
@@ -349,6 +383,21 @@ namespace TaskControlBackend.Migrations
                 columns: new[] { "EmpresaId", "Estado" });
 
             migrationBuilder.CreateIndex(
+                name: "IX_TareasAsignacionesHistorial_AsignadoAUsuarioId",
+                table: "TareasAsignacionesHistorial",
+                column: "AsignadoAUsuarioId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TareasAsignacionesHistorial_AsignadoPorUsuarioId",
+                table: "TareasAsignacionesHistorial",
+                column: "AsignadoPorUsuarioId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_TareasAsignacionesHistorial_TareaId",
+                table: "TareasAsignacionesHistorial",
+                column: "TareaId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_TareasCapacidadesRequeridas_TareaId_Nombre",
                 table: "TareasCapacidadesRequeridas",
                 columns: new[] { "TareaId", "Nombre" },
@@ -382,6 +431,9 @@ namespace TaskControlBackend.Migrations
 
             migrationBuilder.DropTable(
                 name: "RefreshTokens");
+
+            migrationBuilder.DropTable(
+                name: "TareasAsignacionesHistorial");
 
             migrationBuilder.DropTable(
                 name: "TareasCapacidadesRequeridas");

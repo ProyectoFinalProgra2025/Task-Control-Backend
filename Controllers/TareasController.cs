@@ -118,7 +118,7 @@ namespace TaskControlBackend.Controllers
         }
         
         // GET /api/tareas/mis
-// Para Usuario (trabajador) y ManagerDepartamento → devuelve las tareas asignadas a él mismo
+        // Para Usuario (trabajador) y ManagerDepartamento → devuelve las tareas asignadas a él mismo
         [HttpGet("mis")]
         public async Task<IActionResult> MisTareas(
             [FromQuery] EstadoTarea? estado,
@@ -129,14 +129,13 @@ namespace TaskControlBackend.Controllers
             if (rol != RolUsuario.Usuario && rol != RolUsuario.ManagerDepartamento)
                 return Forbid();
 
-            var list = await _svc.ListAsync(
+            // Usar método específico para "Mis Tareas" que solo devuelve tareas asignadas al usuario
+            var list = await _svc.ListMisTareasAsync(
                 GetEmpresaIdOrThrow(),
-                rol,
                 GetUserId(),
                 estado,
                 prioridad,
-                departamento,
-                asignadoAUsuarioId: null   // se ignora en el servicio cuando es Usuario
+                departamento
             );
 
             return Ok(new { success = true, data = list });

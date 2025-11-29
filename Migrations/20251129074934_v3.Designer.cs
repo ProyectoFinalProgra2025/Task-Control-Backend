@@ -12,8 +12,8 @@ using TaskControlBackend.Data;
 namespace TaskControlBackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251128190553_AddTareaAsignacionHistorial")]
-    partial class AddTareaAsignacionHistorial
+    [Migration("20251129074934_v3")]
+    partial class v3
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -122,7 +122,9 @@ namespace TaskControlBackend.Migrations
                         .HasColumnType("datetimeoffset");
 
                     b.Property<bool>("IsRead")
-                        .HasColumnType("bit");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
 
                     b.Property<DateTimeOffset?>("ReadAt")
                         .HasColumnType("datetimeoffset");
@@ -466,7 +468,8 @@ namespace TaskControlBackend.Migrations
                 {
                     b.HasOne("TaskControlBackend.Models.Usuario", "CreatedBy")
                         .WithMany()
-                        .HasForeignKey("CreatedById");
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("CreatedBy");
                 });
@@ -501,7 +504,7 @@ namespace TaskControlBackend.Migrations
                     b.HasOne("TaskControlBackend.Models.Usuario", "Sender")
                         .WithMany()
                         .HasForeignKey("SenderId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Chat");

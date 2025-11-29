@@ -5,12 +5,14 @@ public interface IChatService
     /// <summary>
     /// Marca un mensaje como leído
     /// </summary>
-    Task MarcarMensajeComoLeidoAsync(Guid messageId, Guid userId);
+    /// <returns>Tuple con chatId, messageId y readAt si se marcó, null si ya estaba leído</returns>
+    Task<(Guid chatId, Guid messageId, DateTimeOffset readAt)?> MarcarMensajeComoLeidoAsync(Guid messageId, Guid userId);
 
     /// <summary>
     /// Marca todos los mensajes de un chat como leídos para un usuario
     /// </summary>
-    Task MarcarTodosChatComoLeidosAsync(Guid chatId, Guid userId);
+    /// <returns>Lista de IDs de mensajes que fueron marcados como leídos</returns>
+    Task<List<Guid>> MarcarTodosChatComoLeidosAsync(Guid chatId, Guid userId);
 
     /// <summary>
     /// Obtiene el número total de mensajes no leídos para un usuario

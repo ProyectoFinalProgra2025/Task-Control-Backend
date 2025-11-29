@@ -387,15 +387,68 @@ namespace TaskControlBackend.Services
             {
                 q = q.Where(t => t.AsignadoAUsuarioId == userId);
             }
-            // ManagerDepartamento solo ve SUS tareas asignadas (igual que Usuario)
+            // ManagerDepartamento ve tareas de SU DEPARTAMENTO (no solo las asignadas a él)
             else if (rol == RolUsuario.ManagerDepartamento)
             {
-                q = q.Where(t => t.AsignadoAUsuarioId == userId);
+                // Obtener el departamento del manager
+                var manager = await _db.Usuarios
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Id == userId && u.EmpresaId == empresaId);
+                
+                if (manager?.Departamento.HasValue == true)
+                {
+                    // Ver todas las tareas de su departamento
+                    q = q.Where(t => t.Departamento == manager.Departamento.Value);
+                }
+                else
+                {
+                    // Si no tiene departamento asignado, no ve nada
+                    q = q.Where(t => false);
+                }
             }
             else if (asignadoAUsuarioId.HasValue)
             {
                 q = q.Where(t => t.AsignadoAUsuarioId == asignadoAUsuarioId.Value);
             }
+
+            if (estado.HasValue) q = q.Where(t => t.Estado == estado.Value);
+            if (prioridad.HasValue) q = q.Where(t => t.Prioridad == prioridad.Value);
+            if (departamento.HasValue) q = q.Where(t => t.Departamento == departamento.Value);
+
+            return await q
+                .OrderByDescending(t => t.CreatedAt)
+                .Select(t => new TareaListDTO
+                {
+                    Id = t.Id,
+                    Titulo = t.Titulo,
+                    Descripcion = t.Descripcion,
+                    Estado = t.Estado,
+                    Prioridad = t.Prioridad,
+                    DueDate = t.DueDate,
+                    Departamento = t.Departamento,
+                    AsignadoAUsuarioId = t.AsignadoAUsuarioId,
+                    AsignadoAUsuarioNombre = t.AsignadoAUsuario != null ? t.AsignadoAUsuario.NombreCompleto : null,
+                    CreatedByUsuarioId = t.CreatedByUsuarioId,
+                    CreatedByUsuarioNombre = t.CreatedByUsuario != null ? t.CreatedByUsuario.NombreCompleto : string.Empty,
+                    EstaDelegada = t.EstaDelegada,
+                    CreatedAt = t.CreatedAt
+                }).ToListAsync();
+        }
+
+        // ============================================================
+        // LISTAR MIS TAREAS (solo las asignadas al usuario)
+        // Para Workers y Managers en vista "Mis Tareas"
+        // ============================================================
+        public async Task<List<TareaListDTO>> ListMisTareasAsync(
+            Guid empresaId, Guid userId,
+            EstadoTarea? estado, PrioridadTarea? prioridad, Departamento? departamento)
+        {
+            var q = _db.Tareas
+                .Include(t => t.AsignadoAUsuario)
+                .Include(t => t.CreatedByUsuario)
+                .AsNoTracking()
+                .Where(t => t.EmpresaId == empresaId && t.IsActive)
+                .Where(t => t.AsignadoAUsuarioId == userId); // Solo tareas asignadas a este usuario
 
             if (estado.HasValue) q = q.Where(t => t.Estado == estado.Value);
             if (prioridad.HasValue) q = q.Where(t => t.Prioridad == prioridad.Value);

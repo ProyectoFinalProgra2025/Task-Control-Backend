@@ -11,6 +11,13 @@ namespace TaskControlBackend.Services.Interfaces
             Guid empresaId, RolUsuario rol, Guid userId,
             EstadoTarea? estado, PrioridadTarea? prioridad, Departamento? departamento, Guid? asignadoAUsuarioId);
 
+        /// <summary>
+        /// Listar solo las tareas ASIGNADAS al usuario (para Workers y Managers en vista "Mis Tareas")
+        /// </summary>
+        Task<List<TareaListDTO>> ListMisTareasAsync(
+            Guid empresaId, Guid userId,
+            EstadoTarea? estado, PrioridadTarea? prioridad, Departamento? departamento);
+
         Task<TareaDetalleDTO?> GetAsync(Guid empresaId, RolUsuario rol, Guid userId, Guid tareaId);
 
         Task UpdateAsync(Guid empresaId, Guid tareaId, UpdateTareaDTO dto);

@@ -13,7 +13,7 @@ public class ChatService : IChatService
         _db = db;
     }
 
-    public async Task MarcarMensajeComoLeidoAsync(Guid messageId, Guid userId)
+    public async Task<(Guid chatId, Guid messageId, DateTimeOffset readAt)?> MarcarMensajeComoLeidoAsync(Guid messageId, Guid userId)
     {
         var message = await _db.Messages
             .Include(m => m.Chat)
@@ -29,17 +29,20 @@ public class ChatService : IChatService
 
         // No marcar como leído si el usuario es el remitente
         if (message.SenderId == userId)
-            return;
+            return null;
 
         if (!message.IsRead)
         {
             message.IsRead = true;
             message.ReadAt = DateTimeOffset.UtcNow;
             await _db.SaveChangesAsync();
+            return (message.ChatId, message.Id, message.ReadAt.Value);
         }
+        
+        return null;
     }
 
-    public async Task MarcarTodosChatComoLeidosAsync(Guid chatId, Guid userId)
+    public async Task<List<Guid>> MarcarTodosChatComoLeidosAsync(Guid chatId, Guid userId)
     {
         // Verificar que el usuario es miembro del chat
         var isMember = await _db.ChatMembers
@@ -55,6 +58,8 @@ public class ChatService : IChatService
                         !m.IsRead)
             .ToListAsync();
 
+        var markedIds = new List<Guid>();
+        
         if (mensajesNoLeidos.Any())
         {
             var now = DateTimeOffset.UtcNow;
@@ -62,9 +67,12 @@ public class ChatService : IChatService
             {
                 mensaje.IsRead = true;
                 mensaje.ReadAt = now;
+                markedIds.Add(mensaje.Id);
             }
             await _db.SaveChangesAsync();
         }
+        
+        return markedIds;
     }
 
     public async Task<int> GetTotalMensajesNoLeidosAsync(Guid userId)
