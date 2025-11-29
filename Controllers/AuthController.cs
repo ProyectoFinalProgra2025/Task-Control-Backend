@@ -9,9 +9,8 @@ using TaskControlBackend.Services.Interfaces;
 
 namespace TaskControlBackend.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
-    public class AuthController : ControllerBase
+    public class AuthController : BaseController
     {
         private readonly IAuthService _auth;
         private readonly AppDbContext _db;
@@ -87,8 +86,7 @@ namespace TaskControlBackend.Controllers
                 if (!User.Identity?.IsAuthenticated ?? true)
                     return Unauthorized(new { success = false, message = "Debe estar autenticado para crear otro AdminGeneral" });
 
-                var rol = User.FindFirst(ClaimTypes.Role)?.Value;
-                if (!string.Equals(rol, RolUsuario.AdminGeneral.ToString(), StringComparison.Ordinal))
+                if (!IsAdminGeneral())
                     return Forbid();
             }
 

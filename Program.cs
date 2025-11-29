@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using TaskControlBackend.Data;
 using TaskControlBackend.DTOs.Chat;
+using TaskControlBackend.Helpers;
 using TaskControlBackend.Hubs;
 using TaskControlBackend.Models.Chat;
 using TaskControlBackend.Models.Enums;
@@ -26,6 +27,7 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IEmpresaService, EmpresaService>();
 builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<ITareaService, TareaService>();
+builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddControllers();
 
 // SignalR
@@ -200,11 +202,13 @@ app.MapGet("/api/chats", async (ClaimsPrincipal principal, AppDbContext db) =>
             c.Id,
             c.Type,
             c.Name,
-            Members = c.Members.Select(m => new { m.UserId, m.User.NombreCompleto, m.User.Email }).ToList(),
+            Members = c.Members.Select(m => new { m.UserId, m.User.NombreCompleto, m.User.Email, m.Role }).ToList(),
             LastMessage = c.Messages
                 .OrderByDescending(m => m.CreatedAt)
-                .Select(m => new { m.Id, m.Body, m.CreatedAt, m.SenderId })
-                .FirstOrDefault()
+                .Select(m => new { m.Id, m.Body, m.CreatedAt, m.SenderId, m.IsRead, m.ReadAt })
+                .FirstOrDefault(),
+            // Contar mensajes no leídos (de otros usuarios)
+            UnreadCount = c.Messages.Count(m => m.SenderId != meGuid && !m.IsRead)
         })
         .ToListAsync();
 
@@ -213,7 +217,7 @@ app.MapGet("/api/chats", async (ClaimsPrincipal principal, AppDbContext db) =>
 }).RequireAuthorization().WithTags("Chat").WithOpenApi();
 
 // Create or get 1:1 chat
-app.MapPost("/api/chats/one-to-one", async (ClaimsPrincipal principal, CreateOneToOneRequest req, AppDbContext db) =>
+app.MapPost("/api/chats/one-to-one", async (ClaimsPrincipal principal, CreateOneToOneRequest req, AppDbContext db, IHubContext<ChatAppHub> hub) =>
 {
     var meId = ClaimsHelpers.GetUserId(principal);
     if (meId == null) return Results.Unauthorized();
@@ -269,11 +273,15 @@ app.MapPost("/api/chats/one-to-one", async (ClaimsPrincipal principal, CreateOne
         new ChatMember { ChatId = chat.Id, UserId = req.UserId, Role = ChatRole.Member, JoinedAt = DateTimeOffset.UtcNow }
     );
     await db.SaveChangesAsync();
+    
+    // Notificar al otro usuario que se creó un chat nuevo
+    await hub.Clients.User(req.UserId.ToString()).SendAsync("chat:created", new { chatId = chat.Id });
+    
     return Results.Ok(new { id = chat.Id });
 }).RequireAuthorization().WithTags("Chat").WithOpenApi();
 
 // Create group chat
-app.MapPost("/api/chats/group", async (ClaimsPrincipal principal, CreateGroupRequest req, AppDbContext db) =>
+app.MapPost("/api/chats/group", async (ClaimsPrincipal principal, CreateGroupRequest req, AppDbContext db, IHubContext<ChatAppHub> hub) =>
 {
     var meId = ClaimsHelpers.GetUserId(principal);
     if (meId == null) return Results.Unauthorized();
@@ -301,6 +309,13 @@ app.MapPost("/api/chats/group", async (ClaimsPrincipal principal, CreateGroupReq
     foreach (var uid in memberIds)
         db.ChatMembers.Add(new ChatMember { ChatId = chat.Id, UserId = uid, Role = ChatRole.Member, JoinedAt = DateTimeOffset.UtcNow });
     await db.SaveChangesAsync();
+    
+    // Notificar a todos los miembros que se creó un chat nuevo
+    foreach (var uid in memberIds)
+    {
+        await hub.Clients.User(uid.ToString()).SendAsync("chat:created", new { chatId = chat.Id });
+    }
+    
     return Results.Ok(new { id = chat.Id });
 }).RequireAuthorization().WithTags("Chat").WithOpenApi();
 
@@ -353,7 +368,7 @@ app.MapGet("/api/chats/{chatId:guid}/messages", async (ClaimsPrincipal principal
         .OrderBy(m => m.CreatedAt)
         .Skip(skip)
         .Take(take)
-        .Select(m => new { m.Id, m.Body, m.CreatedAt, m.SenderId })
+        .Select(m => new { m.Id, m.Body, m.CreatedAt, m.SenderId, chatId, m.IsRead, m.ReadAt })
         .ToListAsync();
     return Results.Ok(msgs);
 }).RequireAuthorization().WithTags("Chat").WithOpenApi();
@@ -381,7 +396,7 @@ app.MapPost("/api/chats/{chatId:guid}/messages", async (ClaimsPrincipal principa
     db.Messages.Add(msg);
     await db.SaveChangesAsync();
 
-    var payload = new { id = msg.Id, body = msg.Body, createdAt = msg.CreatedAt, senderId = msg.SenderId, chatId };
+    var payload = new { id = msg.Id, body = msg.Body, createdAt = msg.CreatedAt, senderId = msg.SenderId, chatId, isRead = false, readAt = (DateTimeOffset?)null };
     await hub.Clients.Group(chatId.ToString()).SendAsync("chat:message", payload);
     return Results.Ok(payload);
 }).RequireAuthorization().WithTags("Chat").WithOpenApi();

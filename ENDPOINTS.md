@@ -39,6 +39,8 @@ efreshToken y POST /api/auth/refresh para rotarlos sin volver a exponer credenci
 | Método | Ruta | Roles/Política | Descripción |
 | --- | --- | --- | --- |
 | GET | /api/usuarios/me | Autenticado | Devuelve ID, nombres, rol, empresa/sucursal y claims del usuario del token. |
+| **GET** | **/api/usuarios/me/dashboard** | **Autenticado** | **Obtiene estadísticas personales del usuario: tareas totales, pendientes, asignadas, aceptadas, finalizadas, tareas de hoy (due date) y tareas urgentes (prioridad alta).** |
+| **GET** | **/api/usuarios/me/tareas-recientes** | **Autenticado** | **Lista las últimas N tareas del usuario ordenadas por fecha de actualización. Query param: `limit` (default: 10, max: 50).** |
 
 ### Empresas
 | Método | Ruta | Roles/Política | Descripción |
@@ -50,6 +52,8 @@ efreshToken y POST /api/auth/refresh para rotarlos sin volver a exponer credenci
 | PUT | /api/empresas/{empresaId}/acciones/rechazar | Policy AdminGlobal | Marca la empresa como rechazada con su motivo. |
 | PUT | /api/empresas/{empresaId} | AdminGlobal o AdminEmpresa propietario | Actualiza datos generales de la empresa. |
 | DELETE | /api/empresas/{empresaId} | Policy AdminGlobal | Desactiva (soft-delete) una empresa. |
+| **GET** | **/api/empresas/{id}/trabajadores-ids** | **Autenticado (acceso validado)** | **Obtiene lista de trabajadores con filtros inteligentes. Query params: `departamento` (enum), `disponibles` (bool), `incluirCarga` (bool). Retorna IDs, nombres, departamento y opcionalmente carga de tareas actual.** |
+| **GET** | **/api/empresas/{id}/estadisticas** | **Autenticado (acceso validado)** | **Obtiene estadísticas completas de la empresa: total trabajadores, activos, y desglose completo de tareas por estado (pendientes, asignadas, aceptadas, finalizadas, canceladas). Optimizado con 2 queries GroupBy.** |
 
 ### Sucursales
 | Método | Ruta | Roles/Política | Descripción |
@@ -83,10 +87,11 @@ ol, habilidad, certificacion, sucursalId, page, pageSize). |
 | PUT | /api/tareas/{id}/aceptar | Usuario | El worker acepta una tarea asignada. |
 | PUT | /api/tareas/{id}/finalizar | Usuario | El worker finaliza una tarea con evidencia. |
 | PUT | /api/tareas/{id}/cancelar | AdminEmpresa, ManagerDepartamento | Cancela una tarea pendiente o asignada. |
-| PUT | /api/tareas/{id}/reasignar | AdminEmpresa, ManagerDepartamento | Reasigna una tarea a otro worker (manual o automática). |
+| **PUT** | **/api/tareas/{id}/reasignar** | **AdminEmpresa, ManagerDepartamento** | **Reasigna una tarea a otro worker (manual o automática). Body: `{"nuevoUsuarioId": guid, "asignacionAutomatica": bool, "motivo": string}`. Registra el historial con el motivo.** |
 | **PUT** | **/api/tareas/{id}/delegar** | **AdminEmpresa, ManagerDepartamento** | **Delega una tarea a otro jefe de área. La tarea queda pendiente de aceptación.** |
 | **PUT** | **/api/tareas/{id}/aceptar-delegacion** | **ManagerDepartamento** | **El jefe destino acepta la tarea delegada y puede gestionarla.** |
 | **PUT** | **/api/tareas/{id}/rechazar-delegacion** | **ManagerDepartamento** | **El jefe destino rechaza la tarea con motivo obligatorio. Regresa al jefe origen.** |
+| **GET** | **/api/tareas/{id}/historial-asignaciones** | **AdminEmpresa, ManagerDepartamento** | **Obtiene el historial completo de asignaciones de una tarea: quién la asignó, a quién, tipo (Manual, Automática, Reasignación, Delegación), motivo y fecha.** |
 
 ### Asignaciones y flujo de ejecución
 | Método | Ruta | Roles/Política | Descripción |
@@ -181,4 +186,13 @@ connection.on("chat:message", (message) => {
     console.log("Nuevo mensaje:", message);
 });
 ```
+
+### Gestión de Mensajes Leídos/No Leídos
+
+| Método | Ruta | Roles/Política | Descripción |
+| --- | --- | --- | --- |
+| **PUT** | **/api/chat/messages/{messageId}/mark-read** | **Autenticado** | **Marca un mensaje específico como leído. Actualiza `IsRead` y `ReadAt` en la base de datos. No marca mensajes propios como leídos.** |
+| **PUT** | **/api/chat/{chatId}/mark-all-read** | **Autenticado** | **Marca todos los mensajes de un chat como leídos (excepto los enviados por el usuario). Útil para limpiar notificaciones al abrir un chat.** |
+| **GET** | **/api/chat/unread-count** | **Autenticado** | **Obtiene el número total de mensajes no leídos del usuario en todos sus chats. Útil para badges de notificación.** |
+| **GET** | **/api/chat/unread-by-chat** | **Autenticado** | **Obtiene un diccionario con el número de mensajes no leídos por cada chat. Formato: `{ "chatId1": 5, "chatId2": 2 }`. Útil para mostrar contadores en listas de chats.** |
 

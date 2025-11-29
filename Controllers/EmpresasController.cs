@@ -11,10 +11,8 @@ using TaskControlBackend.Filters;
 
 namespace TaskControlBackend.Controllers
 {
-    [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
-    public class EmpresasController : ControllerBase
+    public class EmpresasController : BaseController
     {
         private readonly AppDbContext _db;
         private readonly IEmpresaService _svc;
@@ -24,31 +22,17 @@ namespace TaskControlBackend.Controllers
             _db = db;
             _svc = svc;
         }
-
-        private bool IsAdminGeneral() =>
-            string.Equals(
-                User.FindFirstValue(ClaimTypes.Role),
-                RolUsuario.AdminGeneral.ToString(),
-                StringComparison.Ordinal
-            );
-
-        private bool IsAdminEmpresa() =>
-            string.Equals(
-                User.FindFirstValue(ClaimTypes.Role),
-                RolUsuario.AdminEmpresa.ToString(),
-                StringComparison.Ordinal
-            );
-
-        private Guid? EmpresaIdClaim()
-        {
-            var v = User.FindFirst("empresaId")?.Value;
-            if (Guid.TryParse(v, out var id))
-                return id;
-            return null;
-        }
+        /// <summary>
+        /// GET /api/empresas/{id}/trabajadores-ids?departamento=Produccion&disponibles=true
+        /// Obtiene información de trabajadores con filtros útiles para asignaciones
+        /// </summary>
         [HttpGet("{id:guid}/trabajadores-ids")]
         [Authorize]
-        public async Task<IActionResult> GetTrabajadoresIds([FromRoute] Guid id)
+        public async Task<IActionResult> GetTrabajadoresIds(
+            [FromRoute] Guid id,
+            [FromQuery] Departamento? departamento = null,
+            [FromQuery] bool disponibles = false,
+            [FromQuery] bool incluirCarga = false)
         {
             // 1. Verificar que la empresa exista
             var empresa = await _db.Empresas
@@ -58,31 +42,92 @@ namespace TaskControlBackend.Controllers
             if (empresa is null)
                 return NotFound(new { success = false, message = "Empresa no encontrada" });
 
-            // 2. Autorización (mismo criterio que en Estadisticas)
-            if (!IsAdminGeneral())
-            {
-                if (!IsAdminEmpresa())
-                    return Forbid();
+            // 2. Autorización
+            if (!ValidateEmpresaAccess(id))
+                return Forbid();
 
-                var empresaToken = EmpresaIdClaim();
-                if (!empresaToken.HasValue || empresaToken.Value != id)
-                    return Forbid();
+            // 3. Query base de trabajadores
+            var query = _db.Usuarios
+                .AsNoTracking()
+                .Where(u => u.EmpresaId == id &&
+                           (u.Rol == RolUsuario.Usuario || u.Rol == RolUsuario.ManagerDepartamento) &&
+                           u.IsActive);
+
+            // Filtrar por departamento si se especifica
+            if (departamento.HasValue)
+                query = query.Where(u => u.Departamento == departamento.Value);
+
+            var trabajadores = await query.ToListAsync();
+
+            // Calcular carga si es necesario
+            if (incluirCarga || disponibles)
+            {
+                var trabajadoresConCarga = new List<object>();
+                var maxTareas = 5; // TODO: Obtener de configuración
+
+                // OPTIMIZACIÓN: Cargar todas las cargas en una sola query para evitar N+1
+                var trabajadorIdsInterno = trabajadores.Select(t => t.Id).ToList();
+                var cargasPorTrabajador = await _db.Tareas
+                    .Where(t => t.EmpresaId == id &&
+                                t.AsignadoAUsuarioId.HasValue &&
+                                trabajadorIdsInterno.Contains(t.AsignadoAUsuarioId.Value) &&
+                                (t.Estado == EstadoTarea.Asignada || t.Estado == EstadoTarea.Aceptada))
+                    .GroupBy(t => t.AsignadoAUsuarioId)
+                    .Select(g => new { UsuarioId = g.Key!.Value, Count = g.Count() })
+                    .ToDictionaryAsync(x => x.UsuarioId, x => x.Count);
+
+                foreach (var trabajador in trabajadores)
+                {
+                    var carga = cargasPorTrabajador.GetValueOrDefault(trabajador.Id, 0);
+
+                    // Si se filtra por disponibles, solo incluir los que tienen espacio
+                    if (disponibles && carga >= maxTareas)
+                        continue;
+
+                    if (incluirCarga)
+                    {
+                        trabajadoresConCarga.Add(new
+                        {
+                            trabajador.Id,
+                            trabajador.NombreCompleto,
+                            Departamento = trabajador.Departamento?.ToString(),
+                            cargaActual = carga,
+                            disponible = carga < maxTareas
+                        });
+                    }
+                    else
+                    {
+                        trabajadoresConCarga.Add(new
+                        {
+                            trabajador.Id,
+                            trabajador.NombreCompleto,
+                            Departamento = trabajador.Departamento?.ToString()
+                        });
+                    }
+                }
+
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        empresaId = id,
+                        totalTrabajadores = trabajadoresConCarga.Count,
+                        trabajadores = trabajadoresConCarga
+                    }
+                });
             }
 
-            // 3. Obtener IDs de todos los trabajadores (rol Usuario) de esa empresa
-            var trabajadorIds = await _db.Usuarios
-                .AsNoTracking()
-                .Where(u => u.EmpresaId == id && u.Rol == RolUsuario.Usuario)
-                .Select(u => u.Id)
-                .ToListAsync();
-
+            // Respuesta simple (solo IDs)
+            var trabajadorIds = trabajadores.Select(t => t.Id).ToList();
             return Ok(new
             {
                 success = true,
                 data = new
                 {
-                    EmpresaId = id,
-                    TrabajadoresIds = trabajadorIds
+                    empresaId = id,
+                    totalTrabajadores = trabajadorIds.Count,
+                    trabajadoresIds = trabajadorIds
                 }
             });
         }
@@ -140,57 +185,32 @@ namespace TaskControlBackend.Controllers
                 return NotFound();
 
             // Autorización
-            if (!IsAdminGeneral())
-            {
-                if (!IsAdminEmpresa())
-                    return Forbid();
+            if (!ValidateEmpresaAccess(id))
+                return Forbid();
 
-                var empresaToken = EmpresaIdClaim();
-                if (!empresaToken.HasValue || empresaToken.Value != id)
-                    return Forbid();
-            }
+            // OPTIMIZACIÓN: Query única para trabajadores
+            var trabajadoresStats = await _db.Usuarios
+                .Where(u => u.EmpresaId == id && u.Rol == RolUsuario.Usuario)
+                .GroupBy(u => u.IsActive)
+                .Select(g => new { IsActive = g.Key, Count = g.Count() })
+                .ToListAsync();
 
-            // Total de trabajadores
-            var totalTrabajadores = await _db.Usuarios
-                .CountAsync(u => u.EmpresaId == id && u.Rol == RolUsuario.Usuario);
+            var totalTrabajadores = trabajadoresStats.Sum(s => s.Count);
+            var trabajadoresActivos = trabajadoresStats.FirstOrDefault(s => s.IsActive)?.Count ?? 0;
 
-            // Trabajadores activos
-            var trabajadoresActivos = await _db.Usuarios
-                .CountAsync(u => u.EmpresaId == id &&
-                                 u.Rol == RolUsuario.Usuario &&
-                                 u.IsActive);
+            // OPTIMIZACIÓN: Query única para todas las estadísticas de tareas
+            var tareasStats = await _db.Tareas
+                .Where(t => t.EmpresaId == id && t.IsActive)
+                .GroupBy(t => t.Estado)
+                .Select(g => new { Estado = g.Key, Count = g.Count() })
+                .ToListAsync();
 
-            // ============================
-            // NUEVAS ESTADÍSTICAS DE TAREAS
-            // ============================
-
-            var totalTareas = await _db.Tareas
-                .CountAsync(t => t.EmpresaId == id && t.IsActive);
-
-            var tareasPendientes = await _db.Tareas
-                .CountAsync(t => t.EmpresaId == id &&
-                                 t.Estado == EstadoTarea.Pendiente &&
-                                 t.IsActive);
-
-            var tareasAsignadas = await _db.Tareas
-                .CountAsync(t => t.EmpresaId == id &&
-                                 t.Estado == EstadoTarea.Asignada &&
-                                 t.IsActive);
-
-            var tareasAceptadas = await _db.Tareas
-                .CountAsync(t => t.EmpresaId == id &&
-                                 t.Estado == EstadoTarea.Aceptada &&
-                                 t.IsActive);
-
-            var tareasFinalizadas = await _db.Tareas
-                .CountAsync(t => t.EmpresaId == id &&
-                                 t.Estado == EstadoTarea.Finalizada &&
-                                 t.IsActive);
-
-            var tareasCanceladas = await _db.Tareas
-                .CountAsync(t => t.EmpresaId == id &&
-                                 t.Estado == EstadoTarea.Cancelada &&
-                                 t.IsActive);
+            var totalTareas = tareasStats.Sum(s => s.Count);
+            var tareasPendientes = tareasStats.FirstOrDefault(s => s.Estado == EstadoTarea.Pendiente)?.Count ?? 0;
+            var tareasAsignadas = tareasStats.FirstOrDefault(s => s.Estado == EstadoTarea.Asignada)?.Count ?? 0;
+            var tareasAceptadas = tareasStats.FirstOrDefault(s => s.Estado == EstadoTarea.Aceptada)?.Count ?? 0;
+            var tareasFinalizadas = tareasStats.FirstOrDefault(s => s.Estado == EstadoTarea.Finalizada)?.Count ?? 0;
+            var tareasCanceladas = tareasStats.FirstOrDefault(s => s.Estado == EstadoTarea.Cancelada)?.Count ?? 0;
 
             var dto = new EmpresaEstadisticasDTO
             {

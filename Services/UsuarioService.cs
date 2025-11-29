@@ -54,19 +54,23 @@ public class UsuarioService : IUsuarioService
         bool requesterIsAdminEmpresa,
         bool requesterIsAdminGeneral)
     {
-        var u = await _db.Usuarios
+        // Build query with security filters from the start
+        var query = _db.Usuarios
             .Include(x => x.UsuarioCapacidades)
                 .ThenInclude(uc => uc.Capacidad)
-            .FirstOrDefaultAsync(x => x.Id == id);
+            .Where(x => x.Id == id);
 
-        if (u is null) return null;
-
-        var isOwner = requesterUserId == id;
-        if (!requesterIsAdminGeneral)
+        // Apply empresa filter if requester is not AdminGeneral
+        if (!requesterIsAdminGeneral && requesterEmpresaId.HasValue)
         {
-            if (!isOwner && !(requesterIsAdminEmpresa && requesterEmpresaId == u.EmpresaId))
-                throw new UnauthorizedAccessException("No autorizado");
+            var isOwner = requesterUserId == id;
+            // Allow if: (1) owner viewing themselves OR (2) AdminEmpresa viewing their empresa
+            if (!isOwner)
+                query = query.Where(x => x.EmpresaId == requesterEmpresaId.Value);
         }
+
+        var u = await query.FirstOrDefaultAsync();
+        if (u is null) return null;
 
         return new UsuarioDTO
         {
