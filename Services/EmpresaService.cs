@@ -14,9 +14,9 @@ namespace TaskControlBackend.Services
     public class EmpresaService : IEmpresaService
     {
         private readonly AppDbContext _db;
-        private readonly IHubContext<ChatAppHub> _hubContext;
-        
-        public EmpresaService(AppDbContext db, IHubContext<ChatAppHub> hubContext)
+        private readonly IHubContext<ChatHub> _hubContext;
+
+        public EmpresaService(AppDbContext db, IHubContext<ChatHub> hubContext)
         {
             _db = db;
             _hubContext = hubContext;

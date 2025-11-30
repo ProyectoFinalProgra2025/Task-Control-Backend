@@ -6,10 +6,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using TaskControlBackend.Data;
-using TaskControlBackend.DTOs.Chat;
 using TaskControlBackend.Helpers;
 using TaskControlBackend.Hubs;
-using TaskControlBackend.Models.Chat;
 using TaskControlBackend.Models.Enums;
 using TaskControlBackend.Services;
 using TaskControlBackend.Services.Interfaces;
@@ -30,8 +28,9 @@ builder.Services.AddScoped<ITareaService, TareaService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddControllers();
 
-// SignalR
+// SignalR with custom UserIdProvider for JWT authentication
 builder.Services.AddSignalR().AddJsonProtocol();
+builder.Services.AddSingleton<IUserIdProvider, CustomUserIdProvider>();
 
 builder.Services.AddCors(options =>
 {
@@ -128,280 +127,424 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+// Map SignalR ChatHub
+app.MapHub<ChatHub>("/chathub");
+
 // ==================== CHAT ENDPOINTS ====================
 
-// Users: search (filtered by role)
-app.MapGet("/api/users/search", async (string? q, int take, ClaimsPrincipal principal, AppDbContext db) =>
+app.MapGet("/api/chat/users/search", async (
+    ClaimsPrincipal principal,
+    IChatService chatService,
+    string? q) =>
 {
-    var meId = ClaimsHelpers.GetUserId(principal);
-    if (meId == null) return Results.Unauthorized();
-    var meGuid = meId.Value;
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+    var searchTerm = q ?? string.Empty;
 
-    var me = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == meGuid);
-    if (me is null) return Results.Unauthorized();
+    var users = await chatService.SearchUsersAsync(userId, searchTerm);
 
-    var term = (q ?? string.Empty).Trim().ToLowerInvariant();
-    take = Math.Clamp(take == 0 ? 20 : take, 1, 50);
-
-    var query = db.Usuarios.AsQueryable();
-
-    // Role-based filtering
-    if (me.Rol == RolUsuario.AdminGeneral)
+    var usersDTO = users.Select(u => new
     {
-        // AdminGeneral can only chat with AdminEmpresa
-        query = query.Where(u => u.Rol == RolUsuario.AdminEmpresa);
-    }
-    else if (me.Rol == RolUsuario.AdminEmpresa || me.Rol == RolUsuario.Usuario)
-    {
-        // AdminEmpresa and Worker can chat with anyone in their company
-        query = query.Where(u => u.EmpresaId == me.EmpresaId);
-    }
-    else if (me.Rol == RolUsuario.ManagerDepartamento)
-    {
-        // ManagerDepartamento can chat with:
-        // 1. Their AdminEmpresa
-        // 2. Other ManagerDepartamento in same company
-        // 3. Workers in their own department
-        query = query.Where(u =>
-            u.EmpresaId == me.EmpresaId &&
-            (u.Rol == RolUsuario.AdminEmpresa ||
-             u.Rol == RolUsuario.ManagerDepartamento ||
-             (u.Rol == RolUsuario.Usuario && u.Departamento == me.Departamento))
-        );
-    }
+        id = u.Id,
+        nombre = u.NombreCompleto,
+        email = u.Email,
+        rol = u.Rol.ToString(),
+        departamento = u.Departamento.ToString(),
+        empresaId = u.EmpresaId,
+        empresaNombre = u.Empresa?.Nombre
+    }).ToList();
 
-    // Exclude self
-    query = query.Where(u => u.Id != meGuid);
+    return Results.Ok(new { success = true, data = usersDTO });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Busca usuarios con los que el usuario actual puede chatear");
 
-    // Search filter
-    if (!string.IsNullOrEmpty(term))
-    {
-        query = query.Where(u => u.Email.ToLower().Contains(term) || u.NombreCompleto.ToLower().Contains(term));
-    }
-
-    var users = await query
-        .OrderBy(u => u.NombreCompleto)
-        .Take(take)
-        .Select(u => new { u.Id, u.NombreCompleto, u.Email })
-        .ToListAsync();
-        
-    return Results.Ok(users);
-}).RequireAuthorization().WithTags("Chat").WithOpenApi();
-
-// Chats: list my chats with last message and members
-app.MapGet("/api/chats", async (ClaimsPrincipal principal, AppDbContext db) =>
+app.MapGet("/api/chat/conversations", async (
+    ClaimsPrincipal principal,
+    IChatService chatService) =>
 {
-    var meId = ClaimsHelpers.GetUserId(principal);
-    if (meId == null) return Results.Unauthorized();
-    var meGuid = meId.Value;
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
 
-    var raw = await db.Chats
-        .Where(c => c.Members.Any(m => m.UserId == meGuid))
-        .Select(c => new
+    var conversations = await chatService.GetUserConversationsAsync(userId);
+
+    var conversationsDTO = conversations.Select(c => new
+    {
+        id = c.Id,
+        type = c.Type.ToString(),
+        name = c.Name,
+        imageUrl = c.ImageUrl,
+        createdById = c.CreatedById,
+        createdAt = c.CreatedAt,
+        lastActivityAt = c.LastActivityAt,
+        members = c.Members.Select(m => new
         {
-            c.Id,
-            c.Type,
-            c.Name,
-            Members = c.Members.Select(m => new { m.UserId, m.User.NombreCompleto, m.User.Email, m.Role }).ToList(),
-            LastMessage = c.Messages
-                .OrderByDescending(m => m.CreatedAt)
-                .Select(m => new { m.Id, m.Body, m.CreatedAt, m.SenderId, m.IsRead, m.ReadAt })
-                .FirstOrDefault(),
-            // Contar mensajes no leídos (de otros usuarios)
-            UnreadCount = c.Messages.Count(m => m.SenderId != meGuid && !m.IsRead)
-        })
-        .ToListAsync();
+            userId = m.UserId,
+            userName = m.User.NombreCompleto,
+            role = m.Role.ToString(),
+            joinedAt = m.JoinedAt,
+            isMuted = m.IsMuted,
+            lastReadAt = m.LastReadAt
+        }).ToList(),
+        lastMessage = c.Messages.OrderByDescending(m => m.SentAt).FirstOrDefault() is { } lastMsg
+            ? new
+            {
+                id = lastMsg.Id,
+                senderId = lastMsg.SenderId,
+                senderName = lastMsg.Sender.NombreCompleto,
+                contentType = lastMsg.ContentType.ToString(),
+                content = lastMsg.Content,
+                sentAt = lastMsg.SentAt
+            }
+            : null,
+        unreadCount = 0 // TODO: Implement efficient unread count
+    }).ToList();
 
-    var ordered = raw.OrderByDescending(x => x.LastMessage?.CreatedAt ?? DateTimeOffset.MinValue).ToList();
-    return Results.Ok(ordered);
-}).RequireAuthorization().WithTags("Chat").WithOpenApi();
+    return Results.Ok(new { success = true, data = conversationsDTO });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Obtiene todas las conversaciones del usuario actual");
 
-// Create or get 1:1 chat
-app.MapPost("/api/chats/one-to-one", async (ClaimsPrincipal principal, CreateOneToOneRequest req, AppDbContext db, IHubContext<ChatAppHub> hub) =>
+app.MapGet("/api/chat/conversations/{conversationId}", async (
+    Guid conversationId,
+    ClaimsPrincipal principal,
+    IChatService chatService) =>
 {
-    var meId = ClaimsHelpers.GetUserId(principal);
-    if (meId == null) return Results.Unauthorized();
-    var meGuid = meId.Value;
-    if (req.UserId == Guid.Empty || req.UserId == meGuid) return Results.BadRequest(new { message = "Usuario inválido" });
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
 
-    // Obtener información de ambos usuarios
-    var me = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == meGuid);
-    var other = await db.Usuarios.FirstOrDefaultAsync(u => u.Id == req.UserId);
-    
-    if (me == null) return Results.Unauthorized();
-    if (other == null) return Results.NotFound(new { message = "Usuario no existe" });
+    var conversation = await chatService.GetConversationByIdAsync(conversationId, userId);
 
-    // RESTRICCIÓN: AdminGeneral solo puede chatear con AdminEmpresa
-    if (me.Rol == RolUsuario.AdminGeneral && other.Rol != RolUsuario.AdminEmpresa)
-    {
-        return Results.Forbid();
-    }
-    if (other.Rol == RolUsuario.AdminGeneral && me.Rol != RolUsuario.AdminEmpresa)
-    {
-        return Results.Forbid();
-    }
+    if (conversation == null)
+        return Results.NotFound(new { success = false, message = "Conversación no encontrada" });
 
-    // RESTRICCIÓN: Usuarios de diferentes empresas no pueden chatear (excepto AdminGeneral)
-    if (me.Rol != RolUsuario.AdminGeneral && other.Rol != RolUsuario.AdminGeneral)
+    var conversationDTO = new
     {
-        if (me.EmpresaId != other.EmpresaId)
+        id = conversation.Id,
+        type = conversation.Type.ToString(),
+        name = conversation.Name,
+        imageUrl = conversation.ImageUrl,
+        createdById = conversation.CreatedById,
+        createdAt = conversation.CreatedAt,
+        lastActivityAt = conversation.LastActivityAt,
+        members = conversation.Members.Select(m => new
         {
-            return Results.BadRequest(new { message = "No puedes chatear con usuarios de otras empresas" });
-        }
-    }
-
-    var existing = await db.Chats
-        .Where(c => c.Type == ChatType.OneToOne
-                    && c.Members.Any(m => m.UserId == meGuid)
-                    && c.Members.Any(m => m.UserId == req.UserId))
-        .Select(c => c.Id)
-        .FirstOrDefaultAsync();
-
-    if (existing != Guid.Empty)
-        return Results.Ok(new { id = existing });
-
-    var chat = new Chat
-    {
-        Id = Guid.NewGuid(),
-        Type = ChatType.OneToOne,
-        CreatedById = meGuid,
-        CreatedAt = DateTimeOffset.UtcNow
+            userId = m.UserId,
+            userName = m.User.NombreCompleto,
+            role = m.Role.ToString(),
+            joinedAt = m.JoinedAt,
+            isMuted = m.IsMuted,
+            lastReadAt = m.LastReadAt
+        }).ToList()
     };
-    db.Chats.Add(chat);
-    db.ChatMembers.AddRange(
-        new ChatMember { ChatId = chat.Id, UserId = meGuid, Role = ChatRole.Owner, JoinedAt = DateTimeOffset.UtcNow },
-        new ChatMember { ChatId = chat.Id, UserId = req.UserId, Role = ChatRole.Member, JoinedAt = DateTimeOffset.UtcNow }
-    );
-    await db.SaveChangesAsync();
-    
-    // Notificar al otro usuario que se creó un chat nuevo
-    await hub.Clients.User(req.UserId.ToString()).SendAsync("chat:created", new { chatId = chat.Id });
-    
-    return Results.Ok(new { id = chat.Id });
-}).RequireAuthorization().WithTags("Chat").WithOpenApi();
 
-// Create group chat
-app.MapPost("/api/chats/group", async (ClaimsPrincipal principal, CreateGroupRequest req, AppDbContext db, IHubContext<ChatAppHub> hub) =>
+    return Results.Ok(new { success = true, data = conversationDTO });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Obtiene una conversación específica por ID");
+
+app.MapPost("/api/chat/conversations/direct", async (
+    ClaimsPrincipal principal,
+    IChatService chatService,
+    TaskControlBackend.DTOs.Chat.CreateDirectConversationRequest request) =>
 {
-    var meId = ClaimsHelpers.GetUserId(principal);
-    if (meId == null) return Results.Unauthorized();
-    var meGuid = meId.Value;
-    var name = (req.Name ?? string.Empty).Trim();
-    if (name.Length < 3) return Results.BadRequest(new { message = "Nombre de grupo mínimo 3 caracteres" });
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
 
-    var memberIds = (req.MemberIds ?? new List<Guid>()).Where(id => id != Guid.Empty && id != meGuid).Distinct().ToList();
-    if (memberIds.Count == 0) return Results.BadRequest(new { message = "Agrega al menos un miembro" });
+    var conversation = await chatService.GetOrCreateDirectConversationAsync(userId, request.OtherUserId);
 
-    // Validate users exist
-    var count = await db.Usuarios.CountAsync(u => memberIds.Contains(u.Id));
-    if (count != memberIds.Count) return Results.BadRequest(new { message = "Algún usuario no existe" });
-
-    var chat = new Chat
+    var conversationDTO = new
     {
-        Id = Guid.NewGuid(),
-        Type = ChatType.Group,
-        Name = name,
-        CreatedById = meGuid,
-        CreatedAt = DateTimeOffset.UtcNow
+        id = conversation.Id,
+        type = conversation.Type.ToString(),
+        createdById = conversation.CreatedById,
+        createdAt = conversation.CreatedAt
     };
-    db.Chats.Add(chat);
-    db.ChatMembers.Add(new ChatMember { ChatId = chat.Id, UserId = meGuid, Role = ChatRole.Owner, JoinedAt = DateTimeOffset.UtcNow });
-    foreach (var uid in memberIds)
-        db.ChatMembers.Add(new ChatMember { ChatId = chat.Id, UserId = uid, Role = ChatRole.Member, JoinedAt = DateTimeOffset.UtcNow });
-    await db.SaveChangesAsync();
-    
-    // Notificar a todos los miembros que se creó un chat nuevo
-    foreach (var uid in memberIds)
-    {
-        await hub.Clients.User(uid.ToString()).SendAsync("chat:created", new { chatId = chat.Id });
-    }
-    
-    return Results.Ok(new { id = chat.Id });
-}).RequireAuthorization().WithTags("Chat").WithOpenApi();
 
-// Add member to existing group
-app.MapPost("/api/chats/{chatId:guid}/members", async (ClaimsPrincipal principal, Guid chatId, AddGroupMemberRequest req, AppDbContext db) =>
+    return Results.Ok(new { success = true, data = conversationDTO, message = "Conversación directa creada o recuperada" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Crea o retorna una conversación directa existente");
+
+app.MapPost("/api/chat/conversations/group", async (
+    ClaimsPrincipal principal,
+    IChatService chatService,
+    TaskControlBackend.DTOs.Chat.CreateGroupConversationRequest request) =>
 {
-    var meId = ClaimsHelpers.GetUserId(principal);
-    if (meId == null) return Results.Unauthorized();
-    var meGuid = meId.Value;
-    if (req.UserId == Guid.Empty) return Results.BadRequest(new { message = "Usuario inválido" });
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
 
-    var chat = await db.Chats.FirstOrDefaultAsync(c => c.Id == chatId);
-    if (chat is null) return Results.NotFound(new { message = "Chat no existe" });
-    if (chat.Type != ChatType.Group) return Results.BadRequest(new { message = "Solo los grupos permiten agregar miembros" });
+    var conversation = await chatService.CreateGroupConversationAsync(
+        userId,
+        request.GroupName,
+        request.MemberIds,
+        request.ImageUrl);
 
-    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meGuid);
-    if (!isMember) return Results.Forbid();
-
-    var userExists = await db.Usuarios.AnyAsync(u => u.Id == req.UserId);
-    if (!userExists) return Results.BadRequest(new { message = "Usuario no existe" });
-
-    var alreadyMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == req.UserId);
-    if (alreadyMember) return Results.Conflict(new { message = "Usuario ya es miembro de este chat" });
-
-    db.ChatMembers.Add(new ChatMember
+    var conversationDTO = new
     {
-        ChatId = chatId,
-        UserId = req.UserId,
-        Role = ChatRole.Member,
-        JoinedAt = DateTimeOffset.UtcNow
-    });
-    await db.SaveChangesAsync();
-    return Results.Ok(new { chatId, userId = req.UserId });
-}).RequireAuthorization().WithTags("Chat").WithOpenApi();
-
-// Get messages
-app.MapGet("/api/chats/{chatId:guid}/messages", async (ClaimsPrincipal principal, Guid chatId, int skip, int take, AppDbContext db) =>
-{
-    var meId = ClaimsHelpers.GetUserId(principal);
-    if (meId == null) return Results.Unauthorized();
-    var meGuid = meId.Value;
-    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meGuid);
-    if (!isMember) return Results.Forbid();
-
-    skip = Math.Max(skip, 0);
-    take = Math.Clamp(take == 0 ? 50 : take, 1, 100);
-
-    var msgs = await db.Messages
-        .Where(m => m.ChatId == chatId)
-        .OrderBy(m => m.CreatedAt)
-        .Skip(skip)
-        .Take(take)
-        .Select(m => new { m.Id, m.Body, m.CreatedAt, m.SenderId, chatId, m.IsRead, m.ReadAt })
-        .ToListAsync();
-    return Results.Ok(msgs);
-}).RequireAuthorization().WithTags("Chat").WithOpenApi();
-
-// Send message
-app.MapPost("/api/chats/{chatId:guid}/messages", async (ClaimsPrincipal principal, Guid chatId, SendMessageRequest req, AppDbContext db, IHubContext<ChatAppHub> hub) =>
-{
-    var meId = ClaimsHelpers.GetUserId(principal);
-    if (meId == null) return Results.Unauthorized();
-    var meGuid = meId.Value;
-    var isMember = await db.ChatMembers.AnyAsync(m => m.ChatId == chatId && m.UserId == meGuid);
-    if (!isMember) return Results.Forbid();
-
-    var body = (req.Text ?? string.Empty).Trim();
-    if (body.Length == 0) return Results.BadRequest(new { message = "Mensaje vacío" });
-
-    var msg = new Message
-    {
-        Id = Guid.NewGuid(),
-        ChatId = chatId,
-        SenderId = meGuid,
-        Body = body,
-        CreatedAt = DateTimeOffset.UtcNow
+        id = conversation.Id,
+        type = conversation.Type.ToString(),
+        name = conversation.Name,
+        imageUrl = conversation.ImageUrl,
+        createdById = conversation.CreatedById,
+        createdAt = conversation.CreatedAt
     };
-    db.Messages.Add(msg);
-    await db.SaveChangesAsync();
 
-    var payload = new { id = msg.Id, body = msg.Body, createdAt = msg.CreatedAt, senderId = msg.SenderId, chatId, isRead = false, readAt = (DateTimeOffset?)null };
-    await hub.Clients.Group(chatId.ToString()).SendAsync("chat:message", payload);
-    return Results.Ok(payload);
-}).RequireAuthorization().WithTags("Chat").WithOpenApi();
+    return Results.Ok(new { success = true, data = conversationDTO, message = "Conversación grupal creada" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Crea una nueva conversación grupal");
 
-// SignalR Hub for real-time chat
-app.MapHub<ChatAppHub>("/apphub").RequireAuthorization();
+app.MapPut("/api/chat/conversations/{conversationId}", async (
+    Guid conversationId,
+    ClaimsPrincipal principal,
+    IChatService chatService,
+    TaskControlBackend.DTOs.Chat.UpdateConversationRequest request) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var updated = await chatService.UpdateConversationAsync(conversationId, userId, request.Name, request.ImageUrl);
+
+    if (!updated)
+        return Results.BadRequest(new { success = false, message = "No tienes permisos para actualizar esta conversación" });
+
+    return Results.Ok(new { success = true, message = "Conversación actualizada" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Actualiza nombre o imagen de una conversación grupal");
+
+app.MapPost("/api/chat/conversations/{conversationId}/members", async (
+    Guid conversationId,
+    ClaimsPrincipal principal,
+    IChatService chatService,
+    TaskControlBackend.DTOs.Chat.AddMembersRequest request) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var added = await chatService.AddMembersToGroupAsync(conversationId, userId, request.MemberIds);
+
+    if (!added)
+        return Results.BadRequest(new { success = false, message = "No tienes permisos para agregar miembros" });
+
+    return Results.Ok(new { success = true, message = "Miembros agregados" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Agrega miembros a una conversación grupal");
+
+app.MapDelete("/api/chat/conversations/{conversationId}/members/{memberId}", async (
+    Guid conversationId,
+    Guid memberId,
+    ClaimsPrincipal principal,
+    IChatService chatService) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var removed = await chatService.RemoveMemberFromGroupAsync(conversationId, userId, memberId);
+
+    if (!removed)
+        return Results.BadRequest(new { success = false, message = "No tienes permisos para remover este miembro" });
+
+    return Results.Ok(new { success = true, message = "Miembro removido" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Remueve un miembro de una conversación grupal");
+
+app.MapGet("/api/chat/conversations/{conversationId}/messages", async (
+    Guid conversationId,
+    ClaimsPrincipal principal,
+    IChatService chatService,
+    int skip = 0,
+    int take = 50) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var messages = await chatService.GetConversationMessagesAsync(conversationId, userId, skip, take);
+
+    var messagesDTO = messages.Select(m => new
+    {
+        id = m.Id,
+        conversationId = m.ConversationId,
+        senderId = m.SenderId,
+        senderName = m.Sender.NombreCompleto,
+        contentType = m.ContentType.ToString(),
+        content = m.Content,
+        fileUrl = m.FileUrl,
+        fileName = m.FileName,
+        fileSizeBytes = m.FileSizeBytes,
+        fileMimeType = m.FileMimeType,
+        sentAt = m.SentAt,
+        deliveredAt = m.DeliveredAt,
+        readAt = m.ReadAt,
+        status = m.Status.ToString(),
+        isEdited = m.IsEdited,
+        editedAt = m.EditedAt,
+        replyToMessageId = m.ReplyToMessageId,
+        replyToMessage = m.ReplyToMessage != null
+            ? new
+            {
+                id = m.ReplyToMessage.Id,
+                senderId = m.ReplyToMessage.SenderId,
+                senderName = m.ReplyToMessage.Sender.NombreCompleto,
+                contentType = m.ReplyToMessage.ContentType.ToString(),
+                content = m.ReplyToMessage.Content
+            }
+            : null,
+        readReceipts = m.ReadStatuses.Select(rs => new
+        {
+            userId = rs.ReadByUserId,
+            userName = rs.ReadByUser.NombreCompleto,
+            readAt = rs.ReadAt
+        }).ToList(),
+        deliveryReceipts = m.DeliveryStatuses.Select(ds => new
+        {
+            userId = ds.DeliveredToUserId,
+            userName = ds.DeliveredToUser.NombreCompleto,
+            deliveredAt = ds.DeliveredAt
+        }).ToList()
+    }).ToList();
+
+    return Results.Ok(new { success = true, data = messagesDTO });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Obtiene mensajes de una conversación con paginación");
+
+app.MapPost("/api/chat/conversations/{conversationId}/messages", async (
+    Guid conversationId,
+    ClaimsPrincipal principal,
+    IChatService chatService,
+    TaskControlBackend.DTOs.Chat.SendTextMessageRequest request) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var message = await chatService.SendTextMessageAsync(
+        userId,
+        conversationId,
+        request.Content,
+        request.ReplyToMessageId);
+
+    var messageDTO = new
+    {
+        id = message.Id,
+        conversationId = message.ConversationId,
+        senderId = message.SenderId,
+        contentType = message.ContentType.ToString(),
+        content = message.Content,
+        sentAt = message.SentAt,
+        status = message.Status.ToString(),
+        replyToMessageId = message.ReplyToMessageId
+    };
+
+    return Results.Ok(new { success = true, data = messageDTO, message = "Mensaje enviado" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Envía un mensaje de texto a una conversación");
+
+app.MapPut("/api/chat/messages/{messageId}", async (
+    Guid messageId,
+    ClaimsPrincipal principal,
+    IChatService chatService,
+    TaskControlBackend.DTOs.Chat.EditMessageRequest request) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var edited = await chatService.EditMessageAsync(messageId, userId, request.NewContent);
+
+    if (!edited)
+        return Results.BadRequest(new { success = false, message = "No puedes editar este mensaje" });
+
+    return Results.Ok(new { success = true, message = "Mensaje editado" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Edita un mensaje existente");
+
+app.MapDelete("/api/chat/messages/{messageId}", async (
+    Guid messageId,
+    ClaimsPrincipal principal,
+    IChatService chatService) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var deleted = await chatService.DeleteMessageAsync(messageId, userId);
+
+    if (!deleted)
+        return Results.BadRequest(new { success = false, message = "No puedes eliminar este mensaje" });
+
+    return Results.Ok(new { success = true, message = "Mensaje eliminado" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Elimina un mensaje (soft delete)");
+
+app.MapPut("/api/chat/messages/{messageId}/delivered", async (
+    Guid messageId,
+    ClaimsPrincipal principal,
+    IChatService chatService) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var marked = await chatService.MarkMessageAsDeliveredAsync(messageId, userId);
+
+    if (!marked)
+        return Results.BadRequest(new { success = false, message = "No se pudo marcar como entregado" });
+
+    return Results.Ok(new { success = true, message = "Mensaje marcado como entregado" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Marca un mensaje como entregado (palomita simple ✓)");
+
+app.MapPut("/api/chat/messages/{messageId}/read", async (
+    Guid messageId,
+    ClaimsPrincipal principal,
+    IChatService chatService) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var marked = await chatService.MarkMessageAsReadAsync(messageId, userId);
+
+    if (!marked)
+        return Results.BadRequest(new { success = false, message = "No se pudo marcar como leído" });
+
+    return Results.Ok(new { success = true, message = "Mensaje marcado como leído" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Marca un mensaje como leído (palomita doble ✓✓)");
+
+app.MapPut("/api/chat/conversations/{conversationId}/mark-all-read", async (
+    Guid conversationId,
+    ClaimsPrincipal principal,
+    IChatService chatService) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var count = await chatService.MarkAllMessagesAsReadAsync(conversationId, userId);
+
+    return Results.Ok(new { success = true, messagesMarked = count, message = $"{count} mensajes marcados como leídos" });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Marca todos los mensajes de una conversación como leídos");
+
+app.MapGet("/api/chat/conversations/{conversationId}/unread-count", async (
+    Guid conversationId,
+    ClaimsPrincipal principal,
+    IChatService chatService) =>
+{
+    var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
+
+    var count = await chatService.GetUnreadMessageCountAsync(conversationId, userId);
+
+    return Results.Ok(new { success = true, unreadCount = count });
+})
+.RequireAuthorization()
+.WithTags("Chat")
+.WithDescription("Obtiene el número de mensajes no leídos en una conversación");
 
 app.Run();

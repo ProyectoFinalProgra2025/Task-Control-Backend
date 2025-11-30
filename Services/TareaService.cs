@@ -14,9 +14,9 @@ namespace TaskControlBackend.Services
     {
         private readonly AppDbContext _db;
         private readonly IConfiguration _config;
-        private readonly IHubContext<ChatAppHub> _hubContext;
+        private readonly IHubContext<ChatHub> _hubContext;
 
-        public TareaService(AppDbContext db, IConfiguration config, IHubContext<ChatAppHub> hubContext)
+        public TareaService(AppDbContext db, IConfiguration config, IHubContext<ChatHub> hubContext)
         {
             _db = db;
             _config = config;

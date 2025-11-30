@@ -59,6 +59,7 @@ namespace TaskControlBackend.Services
             var claims = new List<Claim>
             {
                 new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+                new(ClaimTypes.NameIdentifier, user.Id.ToString()), // Required for SignalR Clients.User()
                 new(ClaimTypes.Role, user.Rol.ToString()),
             };
 
@@ -120,6 +121,7 @@ namespace TaskControlBackend.Services
             var claims = new List<Claim>
             {
                 new(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+                new(ClaimTypes.NameIdentifier, user.Id.ToString()), // Required for SignalR Clients.User()
                 new(ClaimTypes.Role, user.Rol.ToString()),
             };
 

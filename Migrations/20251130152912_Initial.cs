@@ -80,20 +80,23 @@ namespace TaskControlBackend.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "Chats",
+                name: "Conversations",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Type = table.Column<int>(type: "int", nullable: false),
-                    Name = table.Column<string>(type: "nvarchar(128)", maxLength: 128, nullable: true),
-                    CreatedById = table.Column<Guid>(type: "uniqueidentifier", nullable: true),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+                    Name = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    ImageUrl = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    CreatedById = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    LastActivityAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Chats", x => x.Id);
+                    table.PrimaryKey("PK_Conversations", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Chats_Usuarios_CreatedById",
+                        name: "FK_Conversations_Usuarios_CreatedById",
                         column: x => x.CreatedById,
                         principalTable: "Usuarios",
                         principalColumn: "Id",
@@ -214,55 +217,75 @@ namespace TaskControlBackend.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "ChatMembers",
-                columns: table => new
-                {
-                    ChatId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Role = table.Column<int>(type: "int", nullable: false, defaultValue: 0),
-                    JoinedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_ChatMembers", x => new { x.ChatId, x.UserId });
-                    table.ForeignKey(
-                        name: "FK_ChatMembers_Chats_ChatId",
-                        column: x => x.ChatId,
-                        principalTable: "Chats",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                    table.ForeignKey(
-                        name: "FK_ChatMembers_Usuarios_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Usuarios",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "Messages",
+                name: "ChatMessages",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    ChatId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ConversationId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     SenderId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
-                    Body = table.Column<string>(type: "nvarchar(4000)", maxLength: 4000, nullable: false),
-                    CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    IsRead = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
-                    ReadAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
+                    ContentType = table.Column<int>(type: "int", nullable: false),
+                    Content = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    FileUrl = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    FileName = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    FileSizeBytes = table.Column<long>(type: "bigint", nullable: true),
+                    FileMimeType = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    SentAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    DeliveredAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    ReadAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    Status = table.Column<int>(type: "int", nullable: false),
+                    IsEdited = table.Column<bool>(type: "bit", nullable: false),
+                    EditedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false),
+                    DeletedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    ReplyToMessageId = table.Column<Guid>(type: "uniqueidentifier", nullable: true)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Messages", x => x.Id);
+                    table.PrimaryKey("PK_ChatMessages", x => x.Id);
                     table.ForeignKey(
-                        name: "FK_Messages_Chats_ChatId",
-                        column: x => x.ChatId,
-                        principalTable: "Chats",
+                        name: "FK_ChatMessages_ChatMessages_ReplyToMessageId",
+                        column: x => x.ReplyToMessageId,
+                        principalTable: "ChatMessages",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_ChatMessages_Conversations_ConversationId",
+                        column: x => x.ConversationId,
+                        principalTable: "Conversations",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
-                        name: "FK_Messages_Usuarios_SenderId",
+                        name: "FK_ChatMessages_Usuarios_SenderId",
                         column: x => x.SenderId,
+                        principalTable: "Usuarios",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ConversationMembers",
+                columns: table => new
+                {
+                    ConversationId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Role = table.Column<int>(type: "int", nullable: false),
+                    JoinedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    IsMuted = table.Column<bool>(type: "bit", nullable: false),
+                    LastReadAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    IsActive = table.Column<bool>(type: "bit", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_ConversationMembers", x => new { x.ConversationId, x.UserId });
+                    table.ForeignKey(
+                        name: "FK_ConversationMembers_Conversations_ConversationId",
+                        column: x => x.ConversationId,
+                        principalTable: "Conversations",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_ConversationMembers_Usuarios_UserId",
+                        column: x => x.UserId,
                         principalTable: "Usuarios",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
@@ -320,6 +343,58 @@ namespace TaskControlBackend.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "MessageDeliveryStatuses",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    MessageId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DeliveredToUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    DeliveredAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_MessageDeliveryStatuses", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_MessageDeliveryStatuses_ChatMessages_MessageId",
+                        column: x => x.MessageId,
+                        principalTable: "ChatMessages",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_MessageDeliveryStatuses_Usuarios_DeliveredToUserId",
+                        column: x => x.DeliveredToUserId,
+                        principalTable: "Usuarios",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "MessageReadStatuses",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    MessageId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ReadByUserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ReadAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_MessageReadStatuses", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_MessageReadStatuses_ChatMessages_MessageId",
+                        column: x => x.MessageId,
+                        principalTable: "ChatMessages",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "FK_MessageReadStatuses_Usuarios_ReadByUserId",
+                        column: x => x.ReadByUserId,
+                        principalTable: "Usuarios",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
             migrationBuilder.CreateIndex(
                 name: "IX_Capacidades_EmpresaId_Nombre",
                 table: "Capacidades",
@@ -327,13 +402,38 @@ namespace TaskControlBackend.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_ChatMembers_UserId",
-                table: "ChatMembers",
+                name: "IX_ChatMessage_ConversationId_SentAt",
+                table: "ChatMessages",
+                columns: new[] { "ConversationId", "SentAt" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ChatMessage_ReplyToMessageId",
+                table: "ChatMessages",
+                column: "ReplyToMessageId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ChatMessage_SenderId",
+                table: "ChatMessages",
+                column: "SenderId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_ConversationMember_UserId",
+                table: "ConversationMembers",
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Chats_CreatedById",
-                table: "Chats",
+                name: "IX_ConversationMember_UserId_IsActive",
+                table: "ConversationMembers",
+                columns: new[] { "UserId", "IsActive" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Conversation_LastActivityAt",
+                table: "Conversations",
+                column: "LastActivityAt");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Conversations_CreatedById",
+                table: "Conversations",
                 column: "CreatedById");
 
             migrationBuilder.CreateIndex(
@@ -342,14 +442,26 @@ namespace TaskControlBackend.Migrations
                 column: "Estado");
 
             migrationBuilder.CreateIndex(
-                name: "IX_Messages_ChatId_CreatedAt",
-                table: "Messages",
-                columns: new[] { "ChatId", "CreatedAt" });
+                name: "IX_MessageDeliveryStatus_MessageId_UserId_Unique",
+                table: "MessageDeliveryStatuses",
+                columns: new[] { "MessageId", "DeliveredToUserId" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_Messages_SenderId",
-                table: "Messages",
-                column: "SenderId");
+                name: "IX_MessageDeliveryStatus_UserId",
+                table: "MessageDeliveryStatuses",
+                column: "DeliveredToUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_MessageReadStatus_MessageId_UserId_Unique",
+                table: "MessageReadStatuses",
+                columns: new[] { "MessageId", "ReadByUserId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_MessageReadStatus_UserId",
+                table: "MessageReadStatuses",
+                column: "ReadByUserId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_RefreshTokens_UsuarioId_TokenHash",
@@ -424,10 +536,13 @@ namespace TaskControlBackend.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "ChatMembers");
+                name: "ConversationMembers");
 
             migrationBuilder.DropTable(
-                name: "Messages");
+                name: "MessageDeliveryStatuses");
+
+            migrationBuilder.DropTable(
+                name: "MessageReadStatuses");
 
             migrationBuilder.DropTable(
                 name: "RefreshTokens");
@@ -442,13 +557,16 @@ namespace TaskControlBackend.Migrations
                 name: "UsuarioCapacidades");
 
             migrationBuilder.DropTable(
-                name: "Chats");
+                name: "ChatMessages");
 
             migrationBuilder.DropTable(
                 name: "Tareas");
 
             migrationBuilder.DropTable(
                 name: "Capacidades");
+
+            migrationBuilder.DropTable(
+                name: "Conversations");
 
             migrationBuilder.DropTable(
                 name: "Usuarios");
