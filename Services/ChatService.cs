@@ -10,7 +10,7 @@ using TaskControlBackend.Hubs;
 namespace TaskControlBackend.Services;
 
 /// <summary>
-/// Servicio de chat con soporte completo para mensajes, archivos y confirmaciones de lectura
+/// Servicio de chat COMPLETAMENTE REHECHO - Arquitectura simplificada y funcional
 /// </summary>
 public class ChatService : IChatService
 {
@@ -25,37 +25,32 @@ public class ChatService : IChatService
         _logger = logger;
     }
 
-    // ==================== USER SEARCH ====================
+    // ==================== BÚSQUEDA DE USUARIOS ====================
 
     public async Task<List<Usuario>> SearchUsersAsync(Guid currentUserId, string searchTerm)
     {
-        var currentUser = await _db.Usuarios
-            .FirstOrDefaultAsync(u => u.Id == currentUserId);
+        var currentUser = await _db.Usuarios.FindAsync(currentUserId);
+        if (currentUser == null) return new List<Usuario>();
 
-        if (currentUser == null)
-            return new List<Usuario>();
-
-        // Aplicar reglas de búsqueda según rol
         IQueryable<Usuario> query = _db.Usuarios.Where(u => u.Id != currentUserId);
 
+        // Filtros por rol
         if (currentUser.Rol == RolUsuario.AdminGeneral)
         {
-            // AdminGeneral solo puede chatear con AdminEmpresa
             query = query.Where(u => u.Rol == RolUsuario.AdminEmpresa);
         }
         else
         {
-            // Otros roles solo pueden buscar dentro de su empresa
             query = query.Where(u => u.EmpresaId == currentUser.EmpresaId);
         }
 
-        // Aplicar filtro de búsqueda
+        // Búsqueda por término
         if (!string.IsNullOrWhiteSpace(searchTerm))
         {
-            var searchLower = searchTerm.ToLower();
+            var term = searchTerm.ToLower();
             query = query.Where(u =>
-                u.NombreCompleto.ToLower().Contains(searchLower) ||
-                u.Email.ToLower().Contains(searchLower));
+                u.NombreCompleto.ToLower().Contains(term) ||
+                u.Email.ToLower().Contains(term));
         }
 
         return await query
@@ -64,14 +59,14 @@ public class ChatService : IChatService
             .ToListAsync();
     }
 
-    // ==================== CONVERSATIONS ====================
+    // ==================== CONVERSACIONES ====================
 
     public async Task<List<Conversation>> GetUserConversationsAsync(Guid userId)
     {
         return await _db.Conversations
             .Include(c => c.Members.Where(m => m.IsActive))
                 .ThenInclude(m => m.User)
-            .Include(c => c.Messages.OrderByDescending(m => m.SentAt).Take(1)) // Último mensaje
+            .Include(c => c.Messages.OrderByDescending(m => m.SentAt).Take(1))
                 .ThenInclude(m => m.Sender)
             .Where(c => c.Members.Any(m => m.UserId == userId && m.IsActive))
             .Where(c => c.IsActive)
@@ -92,8 +87,8 @@ public class ChatService : IChatService
 
     public async Task<Conversation> GetOrCreateDirectConversationAsync(Guid userId1, Guid userId2)
     {
-        // Buscar conversación directa existente entre estos 2 usuarios
-        var existingConversation = await _db.Conversations
+        // Buscar conversación existente
+        var existing = await _db.Conversations
             .Include(c => c.Members)
             .Where(c => c.Type == ConversationType.Direct)
             .Where(c => c.Members.Count == 2)
@@ -101,10 +96,9 @@ public class ChatService : IChatService
             .Where(c => c.Members.Any(m => m.UserId == userId2 && m.IsActive))
             .FirstOrDefaultAsync();
 
-        if (existingConversation != null)
-            return existingConversation;
+        if (existing != null) return existing;
 
-        // Crear nueva conversación directa
+        // Crear nueva conversación
         var conversation = new Conversation
         {
             Type = ConversationType.Direct,
@@ -116,27 +110,28 @@ public class ChatService : IChatService
 
         _db.Conversations.Add(conversation);
 
-        // Agregar ambos usuarios como miembros
-        var member1 = new ConversationMember
+        _db.ConversationMembers.Add(new ConversationMember
         {
             ConversationId = conversation.Id,
             UserId = userId1,
             Role = ConversationMemberRole.Member,
             JoinedAt = DateTimeOffset.UtcNow,
             IsActive = true
-        };
+        });
 
-        var member2 = new ConversationMember
+        _db.ConversationMembers.Add(new ConversationMember
         {
             ConversationId = conversation.Id,
             UserId = userId2,
             Role = ConversationMemberRole.Member,
             JoinedAt = DateTimeOffset.UtcNow,
             IsActive = true
-        };
+        });
 
-        _db.ConversationMembers.AddRange(member1, member2);
         await _db.SaveChangesAsync();
+
+        _logger.LogInformation("✅ Conversación directa creada entre {User1} y {User2}: {ConvId}",
+            userId1, userId2, conversation.Id);
 
         return conversation;
     }
@@ -156,34 +151,32 @@ public class ChatService : IChatService
 
         _db.Conversations.Add(conversation);
 
-        // Agregar creador como Admin
-        var creatorMember = new ConversationMember
+        // Creador como Admin
+        _db.ConversationMembers.Add(new ConversationMember
         {
             ConversationId = conversation.Id,
             UserId = creatorId,
             Role = ConversationMemberRole.Admin,
             JoinedAt = DateTimeOffset.UtcNow,
             IsActive = true
-        };
+        });
 
-        _db.ConversationMembers.Add(creatorMember);
-
-        // Agregar otros miembros
+        // Otros miembros
         foreach (var memberId in memberIds.Where(id => id != creatorId))
         {
-            var member = new ConversationMember
+            _db.ConversationMembers.Add(new ConversationMember
             {
                 ConversationId = conversation.Id,
                 UserId = memberId,
                 Role = ConversationMemberRole.Member,
                 JoinedAt = DateTimeOffset.UtcNow,
                 IsActive = true
-            };
-
-            _db.ConversationMembers.Add(member);
+            });
         }
 
         await _db.SaveChangesAsync();
+
+        _logger.LogInformation("✅ Conversación grupal creada: {ConvId} - {Name}", conversation.Id, groupName);
 
         return conversation;
     }
@@ -197,63 +190,44 @@ public class ChatService : IChatService
         if (member == null || member.Role != ConversationMemberRole.Admin)
             return false;
 
-        if (newName != null)
-            member.Conversation.Name = newName;
-
-        if (newImageUrl != null)
-            member.Conversation.ImageUrl = newImageUrl;
+        if (newName != null) member.Conversation.Name = newName;
+        if (newImageUrl != null) member.Conversation.ImageUrl = newImageUrl;
 
         member.Conversation.LastActivityAt = DateTimeOffset.UtcNow;
 
         await _db.SaveChangesAsync();
-
-        // Notificar a todos los miembros
-        var memberUserIds = await _db.ConversationMembers
-            .Where(m => m.ConversationId == conversationId && m.IsActive)
-            .Select(m => m.UserId.ToString())
-            .ToListAsync();
-
-        await _hubContext.Clients.Users(memberUserIds).SendAsync("chat:conversation_updated", new
-        {
-            conversationId,
-            name = newName,
-            imageUrl = newImageUrl,
-            updatedAt = DateTimeOffset.UtcNow
-        });
 
         return true;
     }
 
     public async Task<bool> AddMembersToGroupAsync(Guid conversationId, Guid requesterId, List<Guid> newMemberIds)
     {
-        var requesterMember = await _db.ConversationMembers
+        var requester = await _db.ConversationMembers
             .FirstOrDefaultAsync(m => m.ConversationId == conversationId && m.UserId == requesterId && m.IsActive);
 
-        if (requesterMember == null || requesterMember.Role != ConversationMemberRole.Admin)
+        if (requester == null || requester.Role != ConversationMemberRole.Admin)
             return false;
 
-        foreach (var newMemberId in newMemberIds)
+        foreach (var memberId in newMemberIds)
         {
-            var existingMember = await _db.ConversationMembers
-                .FirstOrDefaultAsync(m => m.ConversationId == conversationId && m.UserId == newMemberId);
+            var existing = await _db.ConversationMembers
+                .FirstOrDefaultAsync(m => m.ConversationId == conversationId && m.UserId == memberId);
 
-            if (existingMember == null)
+            if (existing == null)
             {
-                var newMember = new ConversationMember
+                _db.ConversationMembers.Add(new ConversationMember
                 {
                     ConversationId = conversationId,
-                    UserId = newMemberId,
+                    UserId = memberId,
                     Role = ConversationMemberRole.Member,
                     JoinedAt = DateTimeOffset.UtcNow,
                     IsActive = true
-                };
-
-                _db.ConversationMembers.Add(newMember);
+                });
             }
-            else if (!existingMember.IsActive)
+            else if (!existing.IsActive)
             {
-                existingMember.IsActive = true;
-                existingMember.JoinedAt = DateTimeOffset.UtcNow;
+                existing.IsActive = true;
+                existing.JoinedAt = DateTimeOffset.UtcNow;
             }
         }
 
@@ -263,46 +237,43 @@ public class ChatService : IChatService
 
     public async Task<bool> RemoveMemberFromGroupAsync(Guid conversationId, Guid requesterId, Guid memberIdToRemove)
     {
-        var requesterMember = await _db.ConversationMembers
+        var requester = await _db.ConversationMembers
             .FirstOrDefaultAsync(m => m.ConversationId == conversationId && m.UserId == requesterId && m.IsActive);
 
-        if (requesterMember == null)
-            return false;
+        if (requester == null) return false;
 
-        // Admin puede remover a cualquiera, usuario solo puede removerse a sí mismo
-        if (requesterMember.Role != ConversationMemberRole.Admin && requesterId != memberIdToRemove)
+        // Solo admin puede remover a otros, cualquiera puede salirse
+        if (requester.Role != ConversationMemberRole.Admin && requesterId != memberIdToRemove)
             return false;
 
         var memberToRemove = await _db.ConversationMembers
             .FirstOrDefaultAsync(m => m.ConversationId == conversationId && m.UserId == memberIdToRemove);
 
-        if (memberToRemove == null)
-            return false;
+        if (memberToRemove == null) return false;
 
         memberToRemove.IsActive = false;
-
         await _db.SaveChangesAsync();
+
         return true;
     }
 
-    // ==================== MESSAGES ====================
+    // ==================== MENSAJES ====================
 
     public async Task<List<ChatMessage>> GetConversationMessagesAsync(Guid conversationId, Guid userId, int skip = 0, int take = 50)
     {
-        // Verificar que el usuario es miembro de la conversación
-        var isMember = await IsUserActiveMemberAsync(conversationId, userId);
+        var isMember = await _db.ConversationMembers.AnyAsync(m =>
+            m.ConversationId == conversationId &&
+            m.UserId == userId &&
+            m.IsActive);
 
-        if (!isMember)
-            return new List<ChatMessage>();
+        if (!isMember) return new List<ChatMessage>();
 
         return await _db.ChatMessages
             .Include(m => m.Sender)
             .Include(m => m.ReplyToMessage)
                 .ThenInclude(m => m!.Sender)
             .Include(m => m.DeliveryStatuses)
-                .ThenInclude(ds => ds.DeliveredToUser)
             .Include(m => m.ReadStatuses)
-                .ThenInclude(rs => rs.ReadByUser)
             .Where(m => m.ConversationId == conversationId && !m.IsDeleted)
             .OrderByDescending(m => m.SentAt)
             .Skip(skip)
@@ -312,8 +283,13 @@ public class ChatService : IChatService
 
     public async Task<ChatMessage> SendTextMessageAsync(Guid senderId, Guid conversationId, string content, Guid? replyToMessageId = null)
     {
-        if (!await IsUserActiveMemberAsync(conversationId, senderId))
-            throw new UnauthorizedAccessException("No perteneces a esta conversaci�n");
+        var isMember = await _db.ConversationMembers.AnyAsync(m =>
+            m.ConversationId == conversationId &&
+            m.UserId == senderId &&
+            m.IsActive);
+
+        if (!isMember)
+            throw new UnauthorizedAccessException("No perteneces a esta conversación");
 
         var message = new ChatMessage
         {
@@ -328,7 +304,7 @@ public class ChatService : IChatService
 
         _db.ChatMessages.Add(message);
 
-        // Actualizar LastActivityAt de la conversación
+        // Actualizar LastActivityAt
         var conversation = await _db.Conversations.FindAsync(conversationId);
         if (conversation != null)
         {
@@ -337,35 +313,23 @@ public class ChatService : IChatService
 
         await _db.SaveChangesAsync();
 
-        // NOTIFICACIÓN EN TIEMPO REAL: Notificar a TODOS los usuarios (no solo al grupo)
-        // Esto permite que reciban notificaciones incluso si están viendo otro chat
-        var allMemberUserIds = await _db.ConversationMembers
-            .Where(m => m.ConversationId == conversationId && m.IsActive)
-            .Select(m => m.UserId.ToString())
-            .ToListAsync();
-
-        // Cargar información completa del mensaje para el evento
-        var messageWithSender = await _db.ChatMessages
+        // Recargar mensaje con todos los datos
+        var fullMessage = await _db.ChatMessages
             .Include(m => m.Sender)
             .Include(m => m.ReplyToMessage)
+                .ThenInclude(r => r!.Sender)
             .FirstAsync(m => m.Id == message.Id);
 
-        await _hubContext.Clients.Users(allMemberUserIds).SendAsync("chat:message", new
-        {
-            messageId = message.Id,
-            conversationId = message.ConversationId,
-            senderId = message.SenderId,
-            senderName = messageWithSender.Sender.NombreCompleto,
-            contentType = message.ContentType.ToString(),
-            content = message.Content,
-            sentAt = message.SentAt,
-            replyToMessageId = message.ReplyToMessageId
-        });
+        // NOTIFICACIÓN EN TIEMPO REAL
+        await NotifyNewMessage(fullMessage);
 
-        return message;
+        _logger.LogInformation("📨 Mensaje enviado: {MsgId} en conversación {ConvId} por {SenderId}",
+            message.Id, conversationId, senderId);
+
+        return fullMessage;
     }
 
-    public Task<ChatMessage> SendFileMessageAsync(
+    public async Task<ChatMessage> SendFileMessageAsync(
         Guid senderId,
         Guid conversationId,
         MessageContentType contentType,
@@ -375,56 +339,63 @@ public class ChatService : IChatService
         string fileMimeType,
         Guid? replyToMessageId = null)
     {
-        // TODO: IMPLEMENTAR UPLOAD A BLOB STORAGE
-        // 1. Validar tipo de archivo y tamaño
-        // 2. Generar nombre único para el archivo
-        // 3. Subir a Azure Blob Storage
-        // 4. Obtener URL del archivo subido
+        // Validar que sea miembro de la conversación
+        var isMember = await _db.ConversationMembers.AnyAsync(m =>
+            m.ConversationId == conversationId &&
+            m.UserId == senderId &&
+            m.IsActive);
 
-        // POR AHORA: Arquitectura lista, pero upload no implementado
-        throw new NotImplementedException(
-            "File upload to Blob Storage not implemented yet. " +
-            "Architecture is ready - implement Azure Blob Storage upload logic here.");
+        if (!isMember)
+            throw new UnauthorizedAccessException("No perteneces a esta conversación");
 
-        // CÓDIGO ESPERADO (después de implementar Blob Storage):
-        /*
-        string fileUrl = await _blobStorageService.UploadFileAsync(fileData, fileName, fileMimeType);
-        long fileSizeBytes = fileData.Length;
+        // Por ahora, solo guardamos metadata del archivo sin subirlo a almacenamiento
+        // TODO: Implementar subida a Azure Blob Storage o similar cuando se requiera
 
         var message = new ChatMessage
         {
             ConversationId = conversationId,
             SenderId = senderId,
             ContentType = contentType,
-            Content = content ?? string.Empty,
-            FileUrl = fileUrl,
+            Content = content ?? $"📎 {fileName}",
             FileName = fileName,
-            FileSizeBytes = fileSizeBytes,
             FileMimeType = fileMimeType,
             SentAt = DateTimeOffset.UtcNow,
             Status = MessageStatus.Sent,
-            ReplyToMessageId = replyToMessageId
+            ReplyToMessageId = replyToMessageId,
+            FileSizeBytes = (int)fileData.Length
         };
 
         _db.ChatMessages.Add(message);
 
-        // ... resto del código igual que SendTextMessageAsync
-        */
+        // Actualizar LastActivityAt
+        var conversation = await _db.Conversations.FindAsync(conversationId);
+        if (conversation != null)
+        {
+            conversation.LastActivityAt = DateTimeOffset.UtcNow;
+        }
+
+        await _db.SaveChangesAsync();
+
+        // Recargar mensaje con todos los datos
+        var fullMessage = await _db.ChatMessages
+            .Include(m => m.Sender)
+            .Include(m => m.ReplyToMessage)
+                .ThenInclude(r => r!.Sender)
+            .FirstAsync(m => m.Id == message.Id);
+
+        // NOTIFICACIÓN EN TIEMPO REAL
+        await NotifyNewMessage(fullMessage);
+
+        _logger.LogInformation("📎 Archivo enviado: {FileName} en conversación {ConvId} por {SenderId}",
+            fileName, conversationId, senderId);
+
+        return fullMessage;
     }
 
     public async Task<bool> EditMessageAsync(Guid messageId, Guid userId, string newContent)
     {
-        var message = await _db.ChatMessages
-            .FirstOrDefaultAsync(m => m.Id == messageId && m.SenderId == userId);
-
-        if (message == null)
-            return false;
-
-        if (message.SenderId == userId)
-            return false;
-
-        if (!await IsUserActiveMemberAsync(message.ConversationId, userId))
-            return false;
+        var message = await _db.ChatMessages.FindAsync(messageId);
+        if (message == null || message.SenderId != userId) return false;
 
         message.Content = newContent;
         message.IsEdited = true;
@@ -436,17 +407,8 @@ public class ChatService : IChatService
 
     public async Task<bool> DeleteMessageAsync(Guid messageId, Guid userId)
     {
-        var message = await _db.ChatMessages
-            .FirstOrDefaultAsync(m => m.Id == messageId && m.SenderId == userId);
-
-        if (message == null)
-            return false;
-
-        if (message.SenderId == userId)
-            return false;
-
-        if (!await IsUserActiveMemberAsync(message.ConversationId, userId))
-            return false;
+        var message = await _db.ChatMessages.FindAsync(messageId);
+        if (message == null || message.SenderId != userId) return false;
 
         message.IsDeleted = true;
         message.DeletedAt = DateTimeOffset.UtcNow;
@@ -455,22 +417,23 @@ public class ChatService : IChatService
         return true;
     }
 
-    // ==================== DELIVERY & READ RECEIPTS ====================
+    // ==================== CONFIRMACIONES DE LECTURA ====================
 
     public async Task<bool> MarkMessageAsDeliveredAsync(Guid messageId, Guid userId)
     {
         var message = await _db.ChatMessages.FindAsync(messageId);
-        if (message == null)
-            return false;
+        if (message == null) return false;
 
-        // Verificar si ya existe MessageDeliveryStatus
-        var existingStatus = await _db.MessageDeliveryStatuses
+        // No marcar propios mensajes
+        if (message.SenderId == userId) return true;
+
+        // Verificar si ya existe
+        var existing = await _db.MessageDeliveryStatuses
             .FirstOrDefaultAsync(ds => ds.MessageId == messageId && ds.DeliveredToUserId == userId);
 
-        if (existingStatus != null)
-            return true; // Ya marcado como entregado
+        if (existing != null) return true;
 
-        // Crear nuevo MessageDeliveryStatus
+        // Crear nuevo estado
         var deliveryStatus = new MessageDeliveryStatus
         {
             MessageId = messageId,
@@ -480,7 +443,7 @@ public class ChatService : IChatService
 
         _db.MessageDeliveryStatuses.Add(deliveryStatus);
 
-        // Si es la primera entrega, actualizar el mensaje
+        // Actualizar mensaje si es la primera entrega
         if (message.DeliveredAt == null)
         {
             message.DeliveredAt = DateTimeOffset.UtcNow;
@@ -489,13 +452,17 @@ public class ChatService : IChatService
 
         await _db.SaveChangesAsync();
 
-        // Notificar al sender
-        await _hubContext.Clients.User(message.SenderId.ToString()).SendAsync("chat:message_delivered", new
-        {
-            messageId,
-            deliveredToUserId = userId,
-            deliveredAt = DateTimeOffset.UtcNow
-        });
+        // NOTIFICAR AL SENDER
+        await _hubContext.Clients.Group($"user_{message.SenderId}")
+            .SendAsync("MessageDelivered", new
+            {
+                messageId,
+                conversationId = message.ConversationId,
+                deliveredToUserId = userId,
+                deliveredAt = DateTimeOffset.UtcNow
+            });
+
+        _logger.LogDebug("✓ Mensaje {MsgId} marcado como entregado a {UserId}", messageId, userId);
 
         return true;
     }
@@ -503,20 +470,21 @@ public class ChatService : IChatService
     public async Task<bool> MarkMessageAsReadAsync(Guid messageId, Guid userId)
     {
         var message = await _db.ChatMessages.FindAsync(messageId);
-        if (message == null)
-            return false;
+        if (message == null) return false;
 
-        // Verificar si ya existe MessageReadStatus
-        var existingReadStatus = await _db.MessageReadStatuses
+        // No marcar propios mensajes
+        if (message.SenderId == userId) return true;
+
+        // Verificar si ya está marcado como leído
+        var existingRead = await _db.MessageReadStatuses
             .FirstOrDefaultAsync(rs => rs.MessageId == messageId && rs.ReadByUserId == userId);
 
-        if (existingReadStatus != null)
-            return true; // Ya marcado como leído
+        if (existingRead != null) return true;
 
         // Marcar como entregado también (si no lo está)
         await MarkMessageAsDeliveredAsync(messageId, userId);
 
-        // Crear nuevo MessageReadStatus
+        // Crear estado de lectura
         var readStatus = new MessageReadStatus
         {
             MessageId = messageId,
@@ -526,7 +494,7 @@ public class ChatService : IChatService
 
         _db.MessageReadStatuses.Add(readStatus);
 
-        // Si es la primera lectura, actualizar el mensaje
+        // Actualizar mensaje si es la primera lectura
         if (message.ReadAt == null)
         {
             message.ReadAt = DateTimeOffset.UtcNow;
@@ -535,13 +503,17 @@ public class ChatService : IChatService
 
         await _db.SaveChangesAsync();
 
-        // Notificar al sender
-        await _hubContext.Clients.User(message.SenderId.ToString()).SendAsync("chat:message_read", new
-        {
-            messageId,
-            readByUserId = userId,
-            readAt = DateTimeOffset.UtcNow
-        });
+        // NOTIFICAR AL SENDER
+        await _hubContext.Clients.Group($"user_{message.SenderId}")
+            .SendAsync("MessageRead", new
+            {
+                messageId,
+                conversationId = message.ConversationId,
+                readByUserId = userId,
+                readAt = DateTimeOffset.UtcNow
+            });
+
+        _logger.LogDebug("✓✓ Mensaje {MsgId} marcado como leído por {UserId}", messageId, userId);
 
         return true;
     }
@@ -551,13 +523,11 @@ public class ChatService : IChatService
         var member = await _db.ConversationMembers
             .FirstOrDefaultAsync(m => m.ConversationId == conversationId && m.UserId == userId && m.IsActive);
 
-        if (member == null)
-            return 0;
+        if (member == null) return 0;
 
-        // Obtener todos los mensajes no leídos por este usuario
         var unreadMessages = await _db.ChatMessages
             .Where(m => m.ConversationId == conversationId)
-            .Where(m => m.SenderId != userId) // No marcar propios mensajes
+            .Where(m => m.SenderId != userId)
             .Where(m => !m.ReadStatuses.Any(rs => rs.ReadByUserId == userId))
             .Where(m => !m.IsDeleted)
             .ToListAsync();
@@ -570,6 +540,9 @@ public class ChatService : IChatService
         member.LastReadAt = DateTimeOffset.UtcNow;
         await _db.SaveChangesAsync();
 
+        _logger.LogInformation("✓✓ {Count} mensajes marcados como leídos en conversación {ConvId} por {UserId}",
+            unreadMessages.Count, conversationId, userId);
+
         return unreadMessages.Count;
     }
 
@@ -578,8 +551,7 @@ public class ChatService : IChatService
         var member = await _db.ConversationMembers
             .FirstOrDefaultAsync(m => m.ConversationId == conversationId && m.UserId == userId);
 
-        if (member == null)
-            return 0;
+        if (member == null) return 0;
 
         var lastReadAt = member.LastReadAt ?? DateTimeOffset.MinValue;
 
@@ -591,11 +563,49 @@ public class ChatService : IChatService
             .CountAsync();
     }
 
-    private Task<bool> IsUserActiveMemberAsync(Guid conversationId, Guid userId)
+    // ==================== HELPERS PRIVADOS ====================
+
+    private async Task NotifyNewMessage(ChatMessage message)
     {
-        return _db.ConversationMembers.AnyAsync(m =>
-            m.ConversationId == conversationId &&
-            m.UserId == userId &&
-            m.IsActive);
+        // Obtener todos los miembros de la conversación
+        var memberIds = await _db.ConversationMembers
+            .Where(m => m.ConversationId == message.ConversationId && m.IsActive)
+            .Select(m => m.UserId)
+            .ToListAsync();
+
+        var messageDto = new
+        {
+            id = message.Id,
+            conversationId = message.ConversationId,
+            senderId = message.SenderId,
+            senderName = message.Sender?.NombreCompleto ?? "",
+            contentType = message.ContentType.ToString(),
+            content = message.Content,
+            fileUrl = message.FileUrl,
+            fileName = message.FileName,
+            sentAt = message.SentAt,
+            deliveredAt = message.DeliveredAt,
+            readAt = message.ReadAt,
+            status = message.Status.ToString(),
+            isEdited = message.IsEdited,
+            editedAt = message.EditedAt,
+            replyToMessageId = message.ReplyToMessageId,
+            replyToMessage = message.ReplyToMessage == null ? null : new
+            {
+                id = message.ReplyToMessage.Id,
+                senderId = message.ReplyToMessage.SenderId,
+                senderName = message.ReplyToMessage.Sender?.NombreCompleto ?? "",
+                content = message.ReplyToMessage.Content
+            }
+        };
+
+        // Enviar a TODOS los miembros usando sus grupos de usuario
+        foreach (var memberId in memberIds)
+        {
+            await _hubContext.Clients.Group($"user_{memberId}")
+                .SendAsync("ReceiveMessage", messageDto);
+        }
+
+        _logger.LogDebug("📤 Mensaje {MsgId} notificado a {Count} usuarios", message.Id, memberIds.Count);
     }
 }
