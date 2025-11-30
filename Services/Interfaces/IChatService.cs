@@ -79,8 +79,8 @@ public interface IChatService
 
     /// <summary>
     /// Envía un mensaje de texto simple
-    /// Crea automáticamente MessageDeliveryStatus para todos los miembros excepto el sender
-    /// Actualiza Conversation.LastActivityAt
+    /// Actualiza Conversation.LastActivityAt. Las confirmaciones de entrega/lectura se crean
+    /// cuando los clientes las reportan mediante los endpoints correspondientes.
     /// </summary>
     Task<ChatMessage> SendTextMessageAsync(Guid senderId, Guid conversationId, string content, Guid? replyToMessageId = null);
 

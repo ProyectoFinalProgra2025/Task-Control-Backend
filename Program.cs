@@ -9,6 +9,7 @@ using TaskControlBackend.Data;
 using TaskControlBackend.Helpers;
 using TaskControlBackend.Hubs;
 using TaskControlBackend.Models.Enums;
+using TaskControlBackend.Models.Chat;
 using TaskControlBackend.Services;
 using TaskControlBackend.Services.Interfaces;
 
@@ -72,7 +73,9 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             {
                 var accessToken = context.Request.Query["access_token"].FirstOrDefault();
                 var path = context.HttpContext.Request.Path;
-                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/apphub"))
+                // Soportar ambos hubs: TareaHub y ChatHub
+                if (!string.IsNullOrEmpty(accessToken) && 
+                    (path.StartsWithSegments("/tareahub") || path.StartsWithSegments("/chathub")))
                 {
                     context.Token = accessToken;
                 }
@@ -127,8 +130,9 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// Map SignalR ChatHub
-app.MapHub<ChatHub>("/chathub");
+// Map SignalR Hubs
+app.MapHub<TareaHub>("/tareahub");  // Para tareas, métricas, actualizaciones generales
+app.MapHub<ChatHub>("/chathub");    // Para chat (separado)
 
 // ==================== CHAT ENDPOINTS ====================
 
@@ -167,6 +171,13 @@ app.MapGet("/api/chat/conversations", async (
 
     var conversations = await chatService.GetUserConversationsAsync(userId);
 
+    // Ejecutar secuencialmente para evitar errores de concurrencia con DbContext
+    var unreadCounts = new Dictionary<Guid, int>();
+    foreach (var c in conversations)
+    {
+        unreadCounts[c.Id] = await chatService.GetUnreadMessageCountAsync(c.Id, userId);
+    }
+
     var conversationsDTO = conversations.Select(c => new
     {
         id = c.Id,
@@ -192,11 +203,11 @@ app.MapGet("/api/chat/conversations", async (
                 senderId = lastMsg.SenderId,
                 senderName = lastMsg.Sender.NombreCompleto,
                 contentType = lastMsg.ContentType.ToString(),
-                content = lastMsg.Content,
-                sentAt = lastMsg.SentAt
-            }
+            content = lastMsg.Content,
+            sentAt = lastMsg.SentAt
+        }
             : null,
-        unreadCount = 0 // TODO: Implement efficient unread count
+        unreadCount = unreadCounts.TryGetValue(c.Id, out var count) ? count : 0
     }).ToList();
 
     return Results.Ok(new { success = true, data = conversationsDTO });
@@ -420,11 +431,19 @@ app.MapPost("/api/chat/conversations/{conversationId}/messages", async (
 {
     var userId = ClaimsHelpers.GetUserIdOrThrow(principal);
 
-    var message = await chatService.SendTextMessageAsync(
-        userId,
-        conversationId,
-        request.Content,
-        request.ReplyToMessageId);
+    ChatMessage message;
+    try
+    {
+        message = await chatService.SendTextMessageAsync(
+            userId,
+            conversationId,
+            request.Content,
+            request.ReplyToMessageId);
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Forbid();
+    }
 
     var messageDTO = new
     {

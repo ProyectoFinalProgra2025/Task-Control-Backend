@@ -72,6 +72,7 @@ public class ChatService : IChatService
             .Include(c => c.Members.Where(m => m.IsActive))
                 .ThenInclude(m => m.User)
             .Include(c => c.Messages.OrderByDescending(m => m.SentAt).Take(1)) // Último mensaje
+                .ThenInclude(m => m.Sender)
             .Where(c => c.Members.Any(m => m.UserId == userId && m.IsActive))
             .Where(c => c.IsActive)
             .OrderByDescending(c => c.LastActivityAt)
@@ -289,8 +290,7 @@ public class ChatService : IChatService
     public async Task<List<ChatMessage>> GetConversationMessagesAsync(Guid conversationId, Guid userId, int skip = 0, int take = 50)
     {
         // Verificar que el usuario es miembro de la conversación
-        var isMember = await _db.ConversationMembers
-            .AnyAsync(m => m.ConversationId == conversationId && m.UserId == userId && m.IsActive);
+        var isMember = await IsUserActiveMemberAsync(conversationId, userId);
 
         if (!isMember)
             return new List<ChatMessage>();
@@ -298,8 +298,11 @@ public class ChatService : IChatService
         return await _db.ChatMessages
             .Include(m => m.Sender)
             .Include(m => m.ReplyToMessage)
+                .ThenInclude(m => m!.Sender)
             .Include(m => m.DeliveryStatuses)
+                .ThenInclude(ds => ds.DeliveredToUser)
             .Include(m => m.ReadStatuses)
+                .ThenInclude(rs => rs.ReadByUser)
             .Where(m => m.ConversationId == conversationId && !m.IsDeleted)
             .OrderByDescending(m => m.SentAt)
             .Skip(skip)
@@ -309,6 +312,9 @@ public class ChatService : IChatService
 
     public async Task<ChatMessage> SendTextMessageAsync(Guid senderId, Guid conversationId, string content, Guid? replyToMessageId = null)
     {
+        if (!await IsUserActiveMemberAsync(conversationId, senderId))
+            throw new UnauthorizedAccessException("No perteneces a esta conversaci�n");
+
         var message = new ChatMessage
         {
             ConversationId = conversationId,
@@ -327,26 +333,6 @@ public class ChatService : IChatService
         if (conversation != null)
         {
             conversation.LastActivityAt = DateTimeOffset.UtcNow;
-        }
-
-        await _db.SaveChangesAsync();
-
-        // Crear MessageDeliveryStatus para todos los miembros excepto el sender
-        var memberUserIds = await _db.ConversationMembers
-            .Where(m => m.ConversationId == conversationId && m.UserId != senderId && m.IsActive)
-            .Select(m => m.UserId)
-            .ToListAsync();
-
-        foreach (var memberId in memberUserIds)
-        {
-            var deliveryStatus = new MessageDeliveryStatus
-            {
-                MessageId = message.Id,
-                DeliveredToUserId = memberId,
-                DeliveredAt = DateTimeOffset.UtcNow
-            };
-
-            _db.MessageDeliveryStatuses.Add(deliveryStatus);
         }
 
         await _db.SaveChangesAsync();
@@ -434,6 +420,12 @@ public class ChatService : IChatService
         if (message == null)
             return false;
 
+        if (message.SenderId == userId)
+            return false;
+
+        if (!await IsUserActiveMemberAsync(message.ConversationId, userId))
+            return false;
+
         message.Content = newContent;
         message.IsEdited = true;
         message.EditedAt = DateTimeOffset.UtcNow;
@@ -448,6 +440,12 @@ public class ChatService : IChatService
             .FirstOrDefaultAsync(m => m.Id == messageId && m.SenderId == userId);
 
         if (message == null)
+            return false;
+
+        if (message.SenderId == userId)
+            return false;
+
+        if (!await IsUserActiveMemberAsync(message.ConversationId, userId))
             return false;
 
         message.IsDeleted = true;
@@ -550,6 +548,12 @@ public class ChatService : IChatService
 
     public async Task<int> MarkAllMessagesAsReadAsync(Guid conversationId, Guid userId)
     {
+        var member = await _db.ConversationMembers
+            .FirstOrDefaultAsync(m => m.ConversationId == conversationId && m.UserId == userId && m.IsActive);
+
+        if (member == null)
+            return 0;
+
         // Obtener todos los mensajes no leídos por este usuario
         var unreadMessages = await _db.ChatMessages
             .Where(m => m.ConversationId == conversationId)
@@ -563,15 +567,8 @@ public class ChatService : IChatService
             await MarkMessageAsReadAsync(message.Id, userId);
         }
 
-        // Actualizar LastReadAt del miembro
-        var member = await _db.ConversationMembers
-            .FirstOrDefaultAsync(m => m.ConversationId == conversationId && m.UserId == userId);
-
-        if (member != null)
-        {
-            member.LastReadAt = DateTimeOffset.UtcNow;
-            await _db.SaveChangesAsync();
-        }
+        member.LastReadAt = DateTimeOffset.UtcNow;
+        await _db.SaveChangesAsync();
 
         return unreadMessages.Count;
     }
@@ -592,5 +589,13 @@ public class ChatService : IChatService
             .Where(m => m.SentAt > lastReadAt)
             .Where(m => !m.IsDeleted)
             .CountAsync();
+    }
+
+    private Task<bool> IsUserActiveMemberAsync(Guid conversationId, Guid userId)
+    {
+        return _db.ConversationMembers.AnyAsync(m =>
+            m.ConversationId == conversationId &&
+            m.UserId == userId &&
+            m.IsActive);
     }
 }
