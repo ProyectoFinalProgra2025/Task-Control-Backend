@@ -107,6 +107,8 @@ builder.Services.AddSwaggerGen(c =>
                 Type = ReferenceType.SecurityScheme, Id = "Bearer" } }, new string[] { }
         }
     });
+    // Soporte para IFormFile en Swagger
+    c.SupportNonNullableReferenceTypes();
 });
 
 var app = builder.Build();

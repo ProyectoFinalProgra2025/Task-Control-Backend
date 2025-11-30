@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using TaskControlBackend.Data;
+using TaskControlBackend.DTOs.Empresa;
 using TaskControlBackend.Hubs;
 using TaskControlBackend.Models;
 using TaskControlBackend.Models.Enums;
@@ -14,13 +16,18 @@ namespace TaskControlBackend.Services
     public class EmpresaService : IEmpresaService
     {
         private readonly AppDbContext _db;
-        private readonly IHubContext<ChatHub> _hubContext;
+        private readonly IHubContext<TareaHub> _hubContext;
+        private readonly IConfiguration _config;
 
-        public EmpresaService(AppDbContext db, IHubContext<ChatHub> hubContext)
+        public EmpresaService(AppDbContext db, IHubContext<TareaHub> hubContext, IConfiguration config)
         {
             _db = db;
             _hubContext = hubContext;
+            _config = config;
         }
+
+        private int MaxTareasActivasPorUsuario =>
+            int.TryParse(_config["AppSettings:MaxTareasActivasPorUsuario"], out var v) ? v : 5;
 
         // Obtener empresa por Id (solo lectura)
         public Task<Empresa?> GetByIdAsync(Guid id) =>
@@ -181,6 +188,55 @@ namespace TaskControlBackend.Services
                 await transaction.RollbackAsync();
                 throw;
             }
+        }
+
+        // Obtener información de cola de trabajadores
+        public async Task<List<TrabajadorColaDTO>> GetTrabajadoresConColaAsync(Guid empresaId, Departamento? departamento = null)
+        {
+            // Obtener trabajadores
+            var query = _db.Usuarios
+                .AsNoTracking()
+                .Where(u => u.EmpresaId == empresaId &&
+                           (u.Rol == RolUsuario.Usuario || u.Rol == RolUsuario.ManagerDepartamento) &&
+                           u.IsActive);
+
+            // Filtrar por departamento si se especifica
+            if (departamento.HasValue)
+            {
+                query = query.Where(u => u.Departamento == departamento.Value);
+            }
+
+            var trabajadores = await query.ToListAsync();
+            var trabajadorIds = trabajadores.Select(t => t.Id).ToList();
+
+            // Obtener conteo de tareas activas por trabajador
+            var tareasActivasPorTrabajador = await _db.Tareas
+                .Where(t => t.EmpresaId == empresaId &&
+                           t.AsignadoAUsuarioId.HasValue &&
+                           trabajadorIds.Contains(t.AsignadoAUsuarioId.Value) &&
+                           (t.Estado == EstadoTarea.Asignada || t.Estado == EstadoTarea.Aceptada))
+                .GroupBy(t => t.AsignadoAUsuarioId)
+                .Select(g => new { UsuarioId = g.Key!.Value, Count = g.Count() })
+                .ToDictionaryAsync(x => x.UsuarioId, x => x.Count);
+
+            // Mapear a DTO
+            var resultado = trabajadores.Select(t =>
+            {
+                var tareasActivas = tareasActivasPorTrabajador.GetValueOrDefault(t.Id, 0);
+                return new TrabajadorColaDTO
+                {
+                    Id = t.Id,
+                    NombreCompleto = t.NombreCompleto,
+                    Email = t.Email,
+                    Departamento = t.Departamento?.ToString(),
+                    NivelHabilidad = t.NivelHabilidad,
+                    TareasActivas = tareasActivas,
+                    LimiteMaximo = MaxTareasActivasPorUsuario,
+                    Disponible = tareasActivas < MaxTareasActivasPorUsuario
+                };
+            }).ToList();
+
+            return resultado;
         }
     }
 }

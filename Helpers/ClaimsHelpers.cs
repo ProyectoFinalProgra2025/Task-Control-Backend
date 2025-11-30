@@ -1,5 +1,6 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using TaskControlBackend.Models.Enums;
 
 namespace TaskControlBackend.Helpers;
 
@@ -39,11 +40,22 @@ public static class ClaimsHelpers
     }
 
     /// <summary>
-    /// Extracts the user role from the ClaimsPrincipal
+    /// Extracts the user role from the ClaimsPrincipal as string
     /// </summary>
     public static string? GetRole(ClaimsPrincipal principal)
     {
         return principal.FindFirstValue(ClaimTypes.Role);
+    }
+
+    /// <summary>
+    /// Extracts the user role from the ClaimsPrincipal as RolUsuario enum
+    /// </summary>
+    public static RolUsuario? GetRol(ClaimsPrincipal principal)
+    {
+        var roleString = GetRole(principal);
+        if (string.IsNullOrEmpty(roleString))
+            return null;
+        return Enum.TryParse<RolUsuario>(roleString, ignoreCase: true, out var rol) ? rol : null;
     }
 
     /// <summary>

@@ -12,7 +12,7 @@ using TaskControlBackend.Data;
 namespace TaskControlBackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251130152912_Initial")]
+    [Migration("20251130214722_Initial")]
     partial class Initial
     {
         /// <inheritdoc />

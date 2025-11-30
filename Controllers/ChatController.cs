@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using TaskControlBackend.Models.Chat;
 using TaskControlBackend.Services.Interfaces;
@@ -305,38 +306,39 @@ public class ChatController : BaseController
     /// </summary>
     [HttpPost("conversations/{id}/files")]
     [RequestSizeLimit(50 * 1024 * 1024)] // 50MB max
-    public async Task<IActionResult> SendFile(Guid id, [FromForm] IFormFile file, [FromForm] string? replyToMessageId = null)
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> SendFile(Guid id, [FromForm] SendFileRequest request)
     {
         try
         {
             var userId = GetUserId();
 
-            if (file == null || file.Length == 0)
+            if (request.File == null || request.File.Length == 0)
                 return BadRequest(new { message = "Se requiere un archivo válido" });
 
             // Validar tipo de archivo
-            var contentType = GetContentTypeFromFile(file);
+            var contentType = GetContentTypeFromFile(request.File);
             var allowedTypes = new[] { "image", "document", "audio", "video" };
             if (!allowedTypes.Contains(contentType))
                 return BadRequest(new { message = "Tipo de archivo no permitido" });
 
             // Validar tamaño (50MB max)
-            if (file.Length > 50 * 1024 * 1024)
+            if (request.File.Length > 50 * 1024 * 1024)
                 return BadRequest(new { message = "El archivo excede el tamaño máximo permitido (50MB)" });
 
             // Por ahora no guardamos el archivo, solo la metadata
             // TODO: Implementar Azure Blob Storage o similar
-            using var fileStream = file.OpenReadStream();
+            using var fileStream = request.File.OpenReadStream();
 
             var message = await _chatService.SendFileMessageAsync(
                 userId,
                 id,
                 (MessageContentType)Enum.Parse(typeof(MessageContentType), contentType, true),
-                file.FileName,
+                request.File.FileName,
                 fileStream,
-                file.FileName,
-                file.ContentType,
-                string.IsNullOrEmpty(replyToMessageId) ? null : Guid.Parse(replyToMessageId));
+                request.File.FileName,
+                request.File.ContentType,
+                string.IsNullOrEmpty(request.ReplyToMessageId) ? null : Guid.Parse(request.ReplyToMessageId));
 
             var messageDto = new
             {
@@ -621,4 +623,10 @@ public class SendMessageRequest
 public class EditMessageRequest
 {
     public string Content { get; set; } = string.Empty;
+}
+
+public class SendFileRequest
+{
+    public IFormFile File { get; set; } = null!;
+    public string? ReplyToMessageId { get; set; }
 }
