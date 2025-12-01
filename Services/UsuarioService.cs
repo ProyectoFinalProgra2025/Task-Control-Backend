@@ -1,4 +1,4 @@
-﻿using System.Linq;
+﻿﻿using System.Linq;
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using TaskControlBackend.Data;
@@ -583,5 +583,4 @@ public class UsuarioService : IUsuarioService
         adminEmpresa.UpdatedAt = DateTime.UtcNow;
         await _db.SaveChangesAsync();
     }
-    }
-    // Cambia la contraseña de un usuario por AdminEmpresa
+}
