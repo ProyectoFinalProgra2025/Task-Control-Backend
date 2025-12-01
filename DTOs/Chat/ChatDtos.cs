@@ -82,11 +82,13 @@ public class UserSearchResultDTO
 {
     public Guid Id { get; set; }
     public string Nombre { get; set; } = string.Empty;
+    public string NombreCompleto { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public string Rol { get; set; } = string.Empty;
     public string? Departamento { get; set; }
     public Guid? EmpresaId { get; set; }
     public string? EmpresaNombre { get; set; }
+    public string? FotoPerfilUrl { get; set; }
 }
 
 /// <summary>
@@ -114,6 +116,7 @@ public class ConversationMemberDTO
 {
     public Guid UserId { get; set; }
     public string UserName { get; set; } = string.Empty;
+    public string? FotoPerfilUrl { get; set; }
     public string Role { get; set; } = string.Empty; // "Member" o "Admin"
     public DateTimeOffset JoinedAt { get; set; }
     public bool IsMuted { get; set; }

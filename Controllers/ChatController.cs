@@ -42,7 +42,8 @@ public class ChatController : BaseController
                 nombreCompleto = u.NombreCompleto,
                 email = u.Email,
                 rol = u.Rol.ToString(),
-                empresaId = u.EmpresaId
+                empresaId = u.EmpresaId,
+                fotoPerfilUrl = u.FotoPerfilUrl
             });
 
             return Ok(userDtos);
@@ -82,6 +83,7 @@ public class ChatController : BaseController
                 {
                     userId = m.UserId,
                     userName = m.User?.NombreCompleto ?? "",
+                    fotoPerfilUrl = m.User?.FotoPerfilUrl,
                     role = m.Role.ToString(),
                     joinedAt = m.JoinedAt,
                     isMuted = m.IsMuted,
@@ -139,6 +141,7 @@ public class ChatController : BaseController
                 {
                     userId = m.UserId,
                     userName = m.User?.NombreCompleto ?? "",
+                    fotoPerfilUrl = m.User?.FotoPerfilUrl,
                     role = m.Role.ToString(),
                     joinedAt = m.JoinedAt,
                     isMuted = m.IsMuted,

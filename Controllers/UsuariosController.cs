@@ -16,12 +16,14 @@ public class UsuariosController : BaseController
     private readonly AppDbContext _db;
     private readonly IUsuarioService _svc;
     private readonly BlobService _blobService;
+    private readonly ILogger<UsuariosController> _logger;
 
-    public UsuariosController(AppDbContext db, IUsuarioService svc, BlobService blobService)
+    public UsuariosController(AppDbContext db, IUsuarioService svc, BlobService blobService, ILogger<UsuariosController> logger)
     {
         _db = db;
         _svc = svc;
         _blobService = blobService;
+        _logger = logger;
     }
 
     // PERFIL COMPLETO DEL USUARIO AUTENTICADO (CON CAPACIDADES)
@@ -286,6 +288,40 @@ public class UsuariosController : BaseController
         catch (ArgumentException ex)
         {
             return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Elimina la foto de perfil del usuario autenticado
+    /// </summary>
+    [HttpDelete("me/foto-perfil")]
+    public async Task<IActionResult> EliminarFotoPerfil()
+    {
+        var empresaId = GetEmpresaId();
+        if (empresaId is null)
+            return BadRequest(new { success = false, message = "El usuario no tiene empresa asociada" });
+
+        var userId = GetUserId();
+
+        try
+        {
+            // Obtener la URL actual de la foto
+            var usuario = await _db.Usuarios.FindAsync(userId);
+            if (usuario?.FotoPerfilUrl != null)
+            {
+                // Eliminar del blob storage
+                await _blobService.DeleteBlobAsync(usuario.FotoPerfilUrl);
+            }
+            
+            // Actualizar el usuario para quitar la foto
+            await _svc.UpdateFotoPerfilAsync(userId, empresaId.Value, null!);
+
+            return Ok(new { success = true, message = "Foto de perfil eliminada" });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error eliminando foto de perfil del usuario {UserId}", userId);
+            return StatusCode(500, new { success = false, message = "Error al eliminar la foto" });
         }
     }
 
