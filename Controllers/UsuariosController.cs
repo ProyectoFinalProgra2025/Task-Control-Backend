@@ -13,6 +13,25 @@ namespace TaskControlBackend.Controllers;
 [Route("api/[controller]")]
 public class UsuariosController : BaseController
 {
+    // PUT api/usuarios/cambiar-password-usuario (AdminEmpresa cambia contraseña de usuario de su empresa)
+    [HttpPut("cambiar-password-usuario")]
+    public async Task<IActionResult> CambiarPasswordUsuario([FromBody] ChangePasswordAdminEmpresaDTO dto)
+    {
+        if (!IsAdminEmpresa()) return Forbid();
+        var adminEmpresaId = GetUserId();
+        await _svc.CambiarPasswordPorAdminEmpresaAsync(adminEmpresaId, dto);
+        return Ok(new { success = true, message = "Contraseña de usuario actualizada correctamente" });
+    }
+
+    // PUT api/usuarios/cambiar-password-adminempresa (AdminGeneral cambia contraseña de AdminEmpresa)
+    [HttpPut("cambiar-password-adminempresa")]
+    public async Task<IActionResult> CambiarPasswordAdminEmpresa([FromBody] ChangePasswordAdminGeneralDTO dto)
+    {
+        if (!IsAdminGeneral()) return Forbid();
+        var adminGeneralId = GetUserId();
+        await _svc.CambiarPasswordAdminEmpresaPorAdminGeneralAsync(adminGeneralId, dto);
+        return Ok(new { success = true, message = "Contraseña de AdminEmpresa actualizada correctamente" });
+    }
     private readonly AppDbContext _db;
     private readonly IUsuarioService _svc;
 

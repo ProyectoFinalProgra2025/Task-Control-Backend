@@ -296,4 +296,41 @@ public class UsuarioService : IUsuarioService
 
         await _db.SaveChangesAsync();
     }
-}
+
+    // Cambia la contraseña de un usuario por AdminEmpresa
+    public async Task CambiarPasswordPorAdminEmpresaAsync(Guid adminEmpresaId, ChangePasswordAdminEmpresaDTO dto)
+    {
+        var admin = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == adminEmpresaId && u.Rol == RolUsuario.AdminEmpresa && u.IsActive);
+        if (admin == null)
+            throw new UnauthorizedAccessException("Solo un AdminEmpresa activo puede realizar esta acción.");
+
+        var usuario = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == dto.UsuarioId && u.EmpresaId == admin.EmpresaId && u.IsActive);
+        if (usuario == null)
+            throw new KeyNotFoundException("Usuario no encontrado o inactivo en la empresa.");
+
+        PasswordHasher.CreatePasswordHash(dto.NuevaPassword, out var hash, out var salt);
+        usuario.PasswordHash = hash;
+        usuario.PasswordSalt = salt;
+        usuario.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+
+    // Cambia la contraseña de un AdminEmpresa por AdminGeneral
+    public async Task CambiarPasswordAdminEmpresaPorAdminGeneralAsync(Guid adminGeneralId, ChangePasswordAdminGeneralDTO dto)
+    {
+        var adminGeneral = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == adminGeneralId && u.Rol == RolUsuario.AdminGeneral && u.IsActive);
+        if (adminGeneral == null)
+            throw new UnauthorizedAccessException("Solo un AdminGeneral activo puede realizar esta acción.");
+
+        var adminEmpresa = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == dto.UsuarioId && u.Rol == RolUsuario.AdminEmpresa && u.IsActive);
+        if (adminEmpresa == null)
+            throw new KeyNotFoundException("AdminEmpresa no encontrado o inactivo.");
+
+        PasswordHasher.CreatePasswordHash(dto.NuevaPassword, out var hash, out var salt);
+        adminEmpresa.PasswordHash = hash;
+        adminEmpresa.PasswordSalt = salt;
+        adminEmpresa.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+    }
+    // Cambia la contraseña de un usuario por AdminEmpresa
