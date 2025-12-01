@@ -42,4 +42,18 @@ public interface IUsuarioService
         Guid empresaId, 
         Guid capacidadId);
 
+    // ==================== NUEVOS MÉTODOS ====================
+    
+    /// <summary>
+    /// Actualiza la foto de perfil de un usuario
+    /// </summary>
+    Task<string> UpdateFotoPerfilAsync(Guid usuarioId, Guid empresaId, string fotoUrl);
+
+    /// <summary>
+    /// Importa usuarios desde un archivo CSV
+    /// </summary>
+    Task<ImportarUsuariosResultadoDTO> ImportarUsuariosDesdeCsvAsync(
+        Guid empresaId, 
+        Stream csvStream, 
+        string? passwordPorDefecto = null);
 }

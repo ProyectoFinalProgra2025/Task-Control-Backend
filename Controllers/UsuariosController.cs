@@ -15,11 +15,13 @@ public class UsuariosController : BaseController
 {
     private readonly AppDbContext _db;
     private readonly IUsuarioService _svc;
+    private readonly BlobService _blobService;
 
-    public UsuariosController(AppDbContext db, IUsuarioService svc)
+    public UsuariosController(AppDbContext db, IUsuarioService svc, BlobService blobService)
     {
         _db = db;
         _svc = svc;
+        _blobService = blobService;
     }
 
     // PERFIL COMPLETO DEL USUARIO AUTENTICADO (CON CAPACIDADES)
@@ -252,5 +254,141 @@ public class UsuariosController : BaseController
         }
     }
 
+    // ==================== FOTO DE PERFIL ====================
 
+    /// <summary>
+    /// Sube o actualiza la foto de perfil del usuario autenticado
+    /// </summary>
+    [HttpPost("me/foto-perfil")]
+    public async Task<IActionResult> SubirFotoPerfil(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { success = false, message = "Archivo vacío" });
+
+        var empresaId = GetEmpresaId();
+        if (empresaId is null)
+            return BadRequest(new { success = false, message = "El usuario no tiene empresa asociada" });
+
+        var userId = GetUserId();
+
+        try
+        {
+            var fotoUrl = await _blobService.UploadProfilePhotoAsync(file, userId);
+            await _svc.UpdateFotoPerfilAsync(userId, empresaId.Value, fotoUrl);
+
+            return Ok(new 
+            { 
+                success = true, 
+                message = "Foto de perfil actualizada",
+                data = new { fotoUrl }
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Sube o actualiza la foto de perfil de otro usuario (solo AdminEmpresa)
+    /// </summary>
+    [HttpPost("{id:guid}/foto-perfil")]
+    public async Task<IActionResult> SubirFotoPerfilUsuario(Guid id, IFormFile file)
+    {
+        if (!IsAdminEmpresa()) return Forbid();
+
+        if (file == null || file.Length == 0)
+            return BadRequest(new { success = false, message = "Archivo vacío" });
+
+        var empresaId = GetEmpresaId();
+        if (empresaId is null)
+            return Unauthorized();
+
+        try
+        {
+            var fotoUrl = await _blobService.UploadProfilePhotoAsync(file, id);
+            await _svc.UpdateFotoPerfilAsync(id, empresaId.Value, fotoUrl);
+
+            return Ok(new 
+            { 
+                success = true, 
+                message = "Foto de perfil actualizada",
+                data = new { fotoUrl }
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new { success = false, message = ex.Message });
+        }
+    }
+
+    // ==================== IMPORTACIÓN MASIVA CSV ====================
+
+    /// <summary>
+    /// Importa usuarios desde un archivo CSV (solo AdminEmpresa)
+    /// Formato CSV esperado: Email,NombreCompleto,Telefono,Rol,Departamento,NivelHabilidad
+    /// </summary>
+    [HttpPost("importar-csv")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> ImportarUsuariosCsv([FromForm] ImportarUsuariosCsvDTO dto)
+    {
+        if (!IsAdminEmpresa()) return Forbid();
+
+        if (dto.ArchivoCSV == null || dto.ArchivoCSV.Length == 0)
+            return BadRequest(new { success = false, message = "Archivo CSV vacío" });
+
+        var empresaId = GetEmpresaId();
+        if (empresaId is null)
+            return Unauthorized();
+
+        try
+        {
+            // Validar extensión del archivo
+            var extension = Path.GetExtension(dto.ArchivoCSV.FileName).ToLower();
+            if (extension != ".csv")
+                return BadRequest(new { success = false, message = "El archivo debe ser un CSV (.csv)" });
+
+            // Guardar CSV en blob storage para auditoría
+            var csvUrl = await _blobService.UploadCsvAsync(dto.ArchivoCSV, empresaId.Value);
+
+            // Procesar el CSV
+            using var stream = dto.ArchivoCSV.OpenReadStream();
+            var resultado = await _svc.ImportarUsuariosDesdeCsvAsync(
+                empresaId.Value, 
+                stream, 
+                dto.PasswordPorDefecto);
+
+            return Ok(new 
+            { 
+                success = true, 
+                message = $"Importación completada: {resultado.Exitosos} exitosos, {resultado.Fallidos} fallidos",
+                data = resultado
+            });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { success = false, message = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Descarga una plantilla CSV de ejemplo para importación
+    /// </summary>
+    [HttpGet("importar-csv/plantilla")]
+    public IActionResult DescargarPlantillaCsv()
+    {
+        if (!IsAdminEmpresa()) return Forbid();
+
+        var csvContent = "Email,NombreCompleto,Telefono,Rol,Departamento,NivelHabilidad\n" +
+                        "juan.perez@empresa.com,Juan Pérez,+51999888777,Usuario,TI,3\n" +
+                        "maria.lopez@empresa.com,María López,+51999777666,ManagerDepartamento,Ventas,5\n" +
+                        "carlos.garcia@empresa.com,Carlos García,,Usuario,RRHH,2\n";
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(csvContent);
+        return File(bytes, "text/csv", "plantilla_usuarios.csv");
+    }
 }
