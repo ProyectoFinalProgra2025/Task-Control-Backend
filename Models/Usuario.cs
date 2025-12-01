@@ -19,6 +19,9 @@ public class Usuario
     public Departamento? Departamento { get; set; }      // De qué área es
     public int? NivelHabilidad { get; set; }             // 1..5, por ejemplo
 
+    // FOTO DE PERFIL - URL de Azure Blob Storage
+    public string? FotoPerfilUrl { get; set; }
+
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }

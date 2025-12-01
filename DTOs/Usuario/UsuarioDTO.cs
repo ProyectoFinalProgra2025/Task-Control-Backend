@@ -10,6 +10,7 @@ public class UsuarioDTO
     public Guid EmpresaId { get; set; }
     public string? Departamento { get; set; }
     public int? NivelHabilidad { get; set; }
+    public string? FotoPerfilUrl { get; set; }
     public bool IsActive { get; set; }
     public List<CapacidadNivelView> Capacidades { get; set; } = new();
 }

@@ -18,6 +18,10 @@ public class AppDbContext : DbContext
     public DbSet<Tarea> Tareas { get; set; } = null!;
     public DbSet<TareaCapacidadRequerida> TareasCapacidadesRequeridas { get; set; } = null!;
     public DbSet<TareaAsignacionHistorial> TareasAsignacionesHistorial { get; set; } = null!;
+    
+    // ==================== NUEVAS ENTIDADES PARA ARCHIVOS ====================
+    public DbSet<TareaDocumentoAdjunto> TareasDocumentosAdjuntos { get; set; } = null!;
+    public DbSet<TareaEvidencia> TareasEvidencias { get; set; } = null!;
 
     // ==================== CHAT ENTITIES ====================
     public DbSet<Conversation> Conversations => Set<Conversation>();
@@ -33,6 +37,43 @@ public class AppDbContext : DbContext
         // ==================== SOFT DELETE FILTERS ====================
         modelBuilder.Entity<Empresa>().HasQueryFilter(e => e.IsActive);
         modelBuilder.Entity<Usuario>().HasQueryFilter(u => u.IsActive);
+
+        // ==================== TAREA DOCUMENTOS Y EVIDENCIAS ====================
+        
+        // TareaDocumentoAdjunto relationships
+        modelBuilder.Entity<TareaDocumentoAdjunto>()
+            .HasOne(d => d.Tarea)
+            .WithMany(t => t.DocumentosAdjuntos)
+            .HasForeignKey(d => d.TareaId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<TareaDocumentoAdjunto>()
+            .HasOne(d => d.SubidoPorUsuario)
+            .WithMany()
+            .HasForeignKey(d => d.SubidoPorUsuarioId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // TareaEvidencia relationships
+        modelBuilder.Entity<TareaEvidencia>()
+            .HasOne(e => e.Tarea)
+            .WithMany(t => t.Evidencias)
+            .HasForeignKey(e => e.TareaId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<TareaEvidencia>()
+            .HasOne(e => e.SubidoPorUsuario)
+            .WithMany()
+            .HasForeignKey(e => e.SubidoPorUsuarioId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Indexes for performance
+        modelBuilder.Entity<TareaDocumentoAdjunto>()
+            .HasIndex(d => d.TareaId)
+            .HasDatabaseName("IX_TareaDocumentoAdjunto_TareaId");
+
+        modelBuilder.Entity<TareaEvidencia>()
+            .HasIndex(e => e.TareaId)
+            .HasDatabaseName("IX_TareaEvidencia_TareaId");
 
         // ==================== CHAT CONFIGURATIONS ====================
 
