@@ -164,6 +164,18 @@ public class UsuarioService : IUsuarioService
 
         u.IsActive = false;
         u.UpdatedAt = DateTime.UtcNow;
+
+        // Liberar tareas asignadas o aceptadas del usuario desactivado
+        var tareas = await _db.Tareas
+            .Where(t => t.AsignadoAUsuarioId == u.Id && (t.Estado == EstadoTarea.Asignada || t.Estado == EstadoTarea.Aceptada))
+            .ToListAsync();
+
+        foreach (var tarea in tareas)
+        {
+            tarea.Estado = EstadoTarea.Pendiente;
+            tarea.AsignadoAUsuarioId = null;
+        }
+
         await _db.SaveChangesAsync();
     }
 
