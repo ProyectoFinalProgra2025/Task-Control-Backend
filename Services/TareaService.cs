@@ -14,9 +14,9 @@ namespace TaskControlBackend.Services
     {
         private readonly AppDbContext _db;
         private readonly IConfiguration _config;
-        private readonly IHubContext<ChatAppHub> _hubContext;
+        private readonly IHubContext<TareaHub> _hubContext;
 
-        public TareaService(AppDbContext db, IConfiguration config, IHubContext<ChatAppHub> hubContext)
+        public TareaService(AppDbContext db, IConfiguration config, IHubContext<TareaHub> hubContext)
         {
             _db = db;
             _config = config;
@@ -201,7 +201,9 @@ namespace TaskControlBackend.Services
                 (t.Estado == EstadoTarea.Asignada || t.Estado == EstadoTarea.Aceptada));
 
             if (activas >= MaxTareasActivasPorUsuario)
-                throw new InvalidOperationException("El usuario ya tiene el máximo de tareas activas");
+                throw new InvalidOperationException(
+                    $"El trabajador '{usuario.NombreCompleto}' ya tiene el máximo de tareas activas ({MaxTareasActivasPorUsuario}). " +
+                    "Por favor, espere a que complete tareas o asigne a otro trabajador.");
 
             tarea.AsignadoAUsuarioId = usuario.Id;
             tarea.Estado = EstadoTarea.Asignada;
@@ -259,12 +261,12 @@ namespace TaskControlBackend.Services
         }
 
         /// <summary>
-        /// Algoritmo mejorado de asignación automática que considera:
-        /// - Capacidades requeridas
-        /// - Departamento del worker
-        /// - Carga actual de trabajo
-        /// - Nivel de habilidad
-        /// - Balance de carga entre workers
+        /// Algoritmo mejorado de asignación automática con sistema de fallback en 3 niveles:
+        /// NIVEL 1: Workers con TODAS las capacidades requeridas (match perfecto)
+        /// NIVEL 2: Workers con ALGUNAS capacidades requeridas (match parcial)
+        /// NIVEL 3: CUALQUIER worker disponible del departamento
+        /// 
+        /// Garantiza asignación si existe al menos un trabajador disponible en el departamento.
         /// </summary>
         private async Task AsignarAutomaticamenteInternoAsync(Tarea tarea)
         {
@@ -275,7 +277,7 @@ namespace TaskControlBackend.Services
                 .Select(cr => cr.Nombre.Trim().ToLower())
                 .ToList();
 
-            // Obtener candidatos del departamento correcto
+            // Obtener TODOS los candidatos del departamento correcto (sin filtrar por skills aún)
             var candidatos = await _db.Usuarios
                 .Include(u => u.UsuarioCapacidades).ThenInclude(uc => uc.Capacidad)
                 .Where(u => u.EmpresaId == tarea.EmpresaId &&
@@ -285,7 +287,7 @@ namespace TaskControlBackend.Services
                 .ToListAsync();
 
             if (!candidatos.Any())
-                return;
+                return; // No hay trabajadores en el departamento
 
             // OPTIMIZACIÓN: Cargar la carga de trabajo de todos los candidatos en una sola query
             var candidatoIds = candidatos.Select(c => c.Id).ToList();
@@ -298,66 +300,121 @@ namespace TaskControlBackend.Services
                 .Select(g => new { UsuarioId = g.Key!.Value, Count = g.Count() })
                 .ToDictionaryAsync(x => x.UsuarioId, x => x.Count);
 
-            // Calcular score para cada candidato
-            var candidatosConScore = new List<(Usuario usuario, int carga, int score, bool matchPerfecto)>();
+            // Estructuras para los 3 niveles de candidatos
+            var nivel1_MatchPerfecto = new List<(Usuario usuario, int carga, int score)>();
+            var nivel2_MatchParcial = new List<(Usuario usuario, int carga, int score, int skillsMatch)>();
+            var nivel3_Cualquiera = new List<(Usuario usuario, int carga, int score)>();
 
+            // Clasificar candidatos por nivel
             foreach (var u in candidatos)
             {
+                var activas = cargasPorUsuario.GetValueOrDefault(u.Id, 0);
+
+                // Skip si está sobrecargado (ya tiene 5+ tareas)
+                if (activas >= MaxTareasActivasPorUsuario)
+                    continue;
+
                 var capsUsuario = u.UsuarioCapacidades
                     .Select(uc => uc.Capacidad.Nombre.Trim().ToLower())
                     .ToHashSet();
 
-                // Si la tarea requiere capacidades, validar match
-                bool matchPerfecto = true;
-                if (reqCaps.Any())
-                {
-                    if (!reqCaps.All(rc => capsUsuario.Contains(rc)))
-                        continue; // No cumple skills requeridos
-
-                    // Match perfecto si tiene exactamente las capacidades requeridas (no más, no menos)
-                    matchPerfecto = capsUsuario.SetEquals(new HashSet<string>(reqCaps));
-                }
-
-                // Obtener carga de trabajo del diccionario precargado
-                var activas = cargasPorUsuario.GetValueOrDefault(u.Id, 0);
-
-                if (activas >= MaxTareasActivasPorUsuario)
-                    continue; // Sobrecargado
-
-                // Calcular score (mayor es mejor)
                 int score = 100;
 
                 // Penalizar por carga de trabajo (menos tareas = mejor)
-                score -= activas * 20;
+                score -= activas * 15;
 
                 // Bonus por nivel de habilidad
                 if (u.NivelHabilidad.HasValue)
                     score += u.NivelHabilidad.Value * 5;
 
-                // Bonus si es match perfecto de skills
-                if (matchPerfecto)
-                    score += 30;
-
                 // Bonus por prioridad de tarea (tareas urgentes a workers menos ocupados)
                 if (tarea.Prioridad == PrioridadTarea.High && activas == 0)
                     score += 50;
 
-                candidatosConScore.Add((u, activas, score, matchPerfecto));
+                // Determinar nivel según match de capacidades
+                if (reqCaps.Any())
+                {
+                    var skillsMatchCount = reqCaps.Count(rc => capsUsuario.Contains(rc));
+                    var skillsMatchPercentage = (double)skillsMatchCount / reqCaps.Count;
+
+                    if (skillsMatchCount == reqCaps.Count)
+                    {
+                        // NIVEL 1: Match perfecto (tiene todas las capacidades)
+                        score += 50; // Bonus por match perfecto
+                        nivel1_MatchPerfecto.Add((u, activas, score));
+                    }
+                    else if (skillsMatchCount > 0)
+                    {
+                        // NIVEL 2: Match parcial (tiene algunas capacidades)
+                        score += (int)(skillsMatchPercentage * 40); // Bonus proporcional al % de match
+                        nivel2_MatchParcial.Add((u, activas, score, skillsMatchCount));
+                    }
+                    else
+                    {
+                        // NIVEL 3: Sin capacidades requeridas, pero disponible
+                        nivel3_Cualquiera.Add((u, activas, score));
+                    }
+                }
+                else
+                {
+                    // Si la tarea no requiere capacidades específicas, todos son nivel 1
+                    nivel1_MatchPerfecto.Add((u, activas, score));
+                }
             }
 
-            if (!candidatosConScore.Any())
-                return;
+            // Intentar asignación por niveles (primero nivel 1, luego 2, finalmente 3)
+            Usuario? elegido = null;
 
-            // Ordenar por score (mayor primero), luego por carga (menor primero)
-            var elegido = candidatosConScore
-                .OrderByDescending(c => c.score)
-                .ThenBy(c => c.carga)
-                .ThenBy(c => c.usuario.Id)
-                .First().usuario;
+            if (nivel1_MatchPerfecto.Any())
+            {
+                // NIVEL 1: Priorizar match perfecto
+                elegido = nivel1_MatchPerfecto
+                    .OrderByDescending(c => c.score)
+                    .ThenBy(c => c.carga)
+                    .ThenBy(c => c.usuario.Id)
+                    .First().usuario;
+            }
+            else if (nivel2_MatchParcial.Any())
+            {
+                // NIVEL 2: Match parcial (ordenar por mayor cantidad de skills matched)
+                elegido = nivel2_MatchParcial
+                    .OrderByDescending(c => c.skillsMatch) // Primero por cantidad de skills
+                    .ThenByDescending(c => c.score)        // Luego por score
+                    .ThenBy(c => c.carga)                   // Finalmente por carga
+                    .ThenBy(c => c.usuario.Id)
+                    .First().usuario;
+            }
+            else if (nivel3_Cualquiera.Any())
+            {
+                // NIVEL 3: Cualquier trabajador disponible del departamento
+                elegido = nivel3_Cualquiera
+                    .OrderByDescending(c => c.score)
+                    .ThenBy(c => c.carga)
+                    .ThenBy(c => c.usuario.Id)
+                    .First().usuario;
+            }
 
+            // Si después de los 3 niveles no hay elegido, es porque todos están sobrecargados
+            if (elegido == null)
+            {
+                var departamentoNombre = tarea.Departamento?.ToString() ?? "desconocido";
+                throw new InvalidOperationException(
+                    $"No se pudo asignar la tarea. Todos los trabajadores del departamento '{departamentoNombre}' " +
+                    $"tienen el máximo de tareas activas ({MaxTareasActivasPorUsuario}). " +
+                    "Por favor, reasigne manualmente o espere a que se completen tareas.");
+            }
+
+            // Asignar la tarea
             tarea.AsignadoAUsuarioId = elegido.Id;
             tarea.Estado = EstadoTarea.Asignada;
             tarea.UpdatedAt = DateTime.UtcNow;
+
+            // Determinar nivel usado para el historial
+            string nivelAsignacion = nivel1_MatchPerfecto.Any(c => c.usuario.Id == elegido.Id)
+                ? "Match Perfecto"
+                : nivel2_MatchParcial.Any(c => c.usuario.Id == elegido.Id)
+                    ? $"Match Parcial ({nivel2_MatchParcial.First(c => c.usuario.Id == elegido.Id).skillsMatch}/{reqCaps.Count} skills)"
+                    : "Asignación Básica (sin match de capacidades)";
 
             // Registrar en historial (asignación automática, no hay quien asigna)
             RegistrarAsignacionEnHistorial(
@@ -365,7 +422,7 @@ namespace TaskControlBackend.Services
                 elegido.Id,
                 null, // Sistema automático
                 TipoAsignacion.Automatica,
-                $"Score: {candidatosConScore.First(c => c.usuario.Id == elegido.Id).score}"
+                nivelAsignacion
             );
         }
 
@@ -553,6 +610,20 @@ namespace TaskControlBackend.Services
             t.UpdatedAt = DateTime.UtcNow;
 
             await _db.SaveChangesAsync();
+
+            // Emit SignalR event for task update
+            await EmitTareaEventAsync(empresaId, "tarea:updated", new
+            {
+                id = t.Id,
+                titulo = t.Titulo,
+                descripcion = t.Descripcion,
+                empresaId,
+                estado = t.Estado.ToString(),
+                prioridad = t.Prioridad.ToString(),
+                departamento = t.Departamento?.ToString(),
+                dueDate = t.DueDate,
+                updatedAt = t.UpdatedAt
+            });
         }
 
         // ============================================================
@@ -654,6 +725,17 @@ namespace TaskControlBackend.Services
             
             t.UpdatedAt = DateTime.UtcNow;
             await _db.SaveChangesAsync();
+
+            // Emit SignalR event for task cancellation
+            await EmitTareaEventAsync(empresaId, "tarea:cancelled", new
+            {
+                id = t.Id,
+                titulo = t.Titulo,
+                empresaId,
+                estado = t.Estado.ToString(),
+                motivoCancelacion = t.MotivoCancelacion,
+                updatedAt = t.UpdatedAt
+            });
         }
 
         // ============================================================

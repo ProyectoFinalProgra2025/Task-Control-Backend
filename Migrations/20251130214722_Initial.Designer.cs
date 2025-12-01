@@ -12,7 +12,7 @@ using TaskControlBackend.Data;
 namespace TaskControlBackend.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20251129030619_Initial")]
+    [Migration("20251130214722_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -55,7 +55,79 @@ namespace TaskControlBackend.Migrations
                     b.ToTable("Capacidades", (string)null);
                 });
 
-            modelBuilder.Entity("TaskControlBackend.Models.Chat.Chat", b =>
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.ChatMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("ContentType")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("ConversationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("DeliveredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("EditedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FileMimeType")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("FileName")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<long?>("FileSizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("FileUrl")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsEdited")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("ReplyToMessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("SenderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("SentAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReplyToMessageId")
+                        .HasDatabaseName("IX_ChatMessage_ReplyToMessageId");
+
+                    b.HasIndex("SenderId")
+                        .HasDatabaseName("IX_ChatMessage_SenderId");
+
+                    b.HasIndex("ConversationId", "SentAt")
+                        .HasDatabaseName("IX_ChatMessage_ConversationId_SentAt");
+
+                    b.ToTable("ChatMessages");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.Conversation", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -64,12 +136,20 @@ namespace TaskControlBackend.Migrations
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
-                    b.Property<Guid?>("CreatedById")
+                    b.Property<Guid>("CreatedById")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("ImageUrl")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("LastActivityAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("Name")
-                        .HasMaxLength(128)
-                        .HasColumnType("nvarchar(128)");
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<int>("Type")
                         .HasColumnType("int");
@@ -78,67 +158,98 @@ namespace TaskControlBackend.Migrations
 
                     b.HasIndex("CreatedById");
 
-                    b.ToTable("Chats");
+                    b.HasIndex("LastActivityAt")
+                        .HasDatabaseName("IX_Conversation_LastActivityAt");
+
+                    b.ToTable("Conversations");
                 });
 
-            modelBuilder.Entity("TaskControlBackend.Models.Chat.ChatMember", b =>
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.ConversationMember", b =>
                 {
-                    b.Property<Guid>("ChatId")
+                    b.Property<Guid>("ConversationId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<Guid>("UserId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsMuted")
+                        .HasColumnType("bit");
+
                     b.Property<DateTimeOffset>("JoinedAt")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<DateTimeOffset?>("LastReadAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<int>("Role")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int")
-                        .HasDefaultValue(0);
+                        .HasColumnType("int");
 
-                    b.HasKey("ChatId", "UserId");
+                    b.HasKey("ConversationId", "UserId");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId")
+                        .HasDatabaseName("IX_ConversationMember_UserId");
 
-                    b.ToTable("ChatMembers");
+                    b.HasIndex("UserId", "IsActive")
+                        .HasDatabaseName("IX_ConversationMember_UserId_IsActive");
+
+                    b.ToTable("ConversationMembers");
                 });
 
-            modelBuilder.Entity("TaskControlBackend.Models.Chat.Message", b =>
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.MessageDeliveryStatus", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("Body")
-                        .IsRequired()
-                        .HasMaxLength(4000)
-                        .HasColumnType("nvarchar(4000)");
+                    b.Property<DateTimeOffset>("DeliveredAt")
+                        .HasColumnType("datetimeoffset");
 
-                    b.Property<Guid>("ChatId")
+                    b.Property<Guid>("DeliveredToUserId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<bool>("IsRead")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
-                    b.Property<DateTimeOffset?>("ReadAt")
-                        .HasColumnType("datetimeoffset");
-
-                    b.Property<Guid>("SenderId")
+                    b.Property<Guid>("MessageId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("SenderId");
+                    b.HasIndex("DeliveredToUserId")
+                        .HasDatabaseName("IX_MessageDeliveryStatus_UserId");
 
-                    b.HasIndex("ChatId", "CreatedAt");
+                    b.HasIndex("MessageId", "DeliveredToUserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_MessageDeliveryStatus_MessageId_UserId_Unique");
 
-                    b.ToTable("Messages");
+                    b.ToTable("MessageDeliveryStatuses");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.MessageReadStatus", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("MessageId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("ReadAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("ReadByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReadByUserId")
+                        .HasDatabaseName("IX_MessageReadStatus_UserId");
+
+                    b.HasIndex("MessageId", "ReadByUserId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_MessageReadStatus_MessageId_UserId_Unique");
+
+                    b.ToTable("MessageReadStatuses");
                 });
 
             modelBuilder.Entity("TaskControlBackend.Models.Empresa", b =>
@@ -464,42 +575,18 @@ namespace TaskControlBackend.Migrations
                     b.Navigation("Empresa");
                 });
 
-            modelBuilder.Entity("TaskControlBackend.Models.Chat.Chat", b =>
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.ChatMessage", b =>
                 {
-                    b.HasOne("TaskControlBackend.Models.Usuario", "CreatedBy")
-                        .WithMany()
-                        .HasForeignKey("CreatedById")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.Navigation("CreatedBy");
-                });
-
-            modelBuilder.Entity("TaskControlBackend.Models.Chat.ChatMember", b =>
-                {
-                    b.HasOne("TaskControlBackend.Models.Chat.Chat", "Chat")
-                        .WithMany("Members")
-                        .HasForeignKey("ChatId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("TaskControlBackend.Models.Usuario", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Chat");
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("TaskControlBackend.Models.Chat.Message", b =>
-                {
-                    b.HasOne("TaskControlBackend.Models.Chat.Chat", "Chat")
+                    b.HasOne("TaskControlBackend.Models.Chat.Conversation", "Conversation")
                         .WithMany("Messages")
-                        .HasForeignKey("ChatId")
+                        .HasForeignKey("ConversationId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("TaskControlBackend.Models.Chat.ChatMessage", "ReplyToMessage")
+                        .WithMany("Replies")
+                        .HasForeignKey("ReplyToMessageId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("TaskControlBackend.Models.Usuario", "Sender")
                         .WithMany()
@@ -507,9 +594,79 @@ namespace TaskControlBackend.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Chat");
+                    b.Navigation("Conversation");
+
+                    b.Navigation("ReplyToMessage");
 
                     b.Navigation("Sender");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.Conversation", b =>
+                {
+                    b.HasOne("TaskControlBackend.Models.Usuario", "CreatedBy")
+                        .WithMany()
+                        .HasForeignKey("CreatedById")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CreatedBy");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.ConversationMember", b =>
+                {
+                    b.HasOne("TaskControlBackend.Models.Chat.Conversation", "Conversation")
+                        .WithMany("Members")
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TaskControlBackend.Models.Usuario", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Conversation");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.MessageDeliveryStatus", b =>
+                {
+                    b.HasOne("TaskControlBackend.Models.Usuario", "DeliveredToUser")
+                        .WithMany()
+                        .HasForeignKey("DeliveredToUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TaskControlBackend.Models.Chat.ChatMessage", "Message")
+                        .WithMany("DeliveryStatuses")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("DeliveredToUser");
+
+                    b.Navigation("Message");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.MessageReadStatus", b =>
+                {
+                    b.HasOne("TaskControlBackend.Models.Chat.ChatMessage", "Message")
+                        .WithMany("ReadStatuses")
+                        .HasForeignKey("MessageId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TaskControlBackend.Models.Usuario", "ReadByUser")
+                        .WithMany()
+                        .HasForeignKey("ReadByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Message");
+
+                    b.Navigation("ReadByUser");
                 });
 
             modelBuilder.Entity("TaskControlBackend.Models.RefreshToken", b =>
@@ -631,7 +788,16 @@ namespace TaskControlBackend.Migrations
                     b.Navigation("UsuarioCapacidades");
                 });
 
-            modelBuilder.Entity("TaskControlBackend.Models.Chat.Chat", b =>
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.ChatMessage", b =>
+                {
+                    b.Navigation("DeliveryStatuses");
+
+                    b.Navigation("ReadStatuses");
+
+                    b.Navigation("Replies");
+                });
+
+            modelBuilder.Entity("TaskControlBackend.Models.Chat.Conversation", b =>
                 {
                     b.Navigation("Members");
 
