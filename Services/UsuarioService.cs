@@ -10,6 +10,19 @@ using TaskControlBackend.Services.Interfaces;
 namespace TaskControlBackend.Services;
 
 public class UsuarioService : IUsuarioService
+    // Guarda la imagen de perfil del usuario
+    public async Task<bool> GuardarImagenPerfilAsync(Guid usuarioId, Guid requesterId, string url)
+    {
+        // Solo el propio usuario o AdminEmpresa puede cambiar la imagen
+        var usuario = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId && u.IsActive);
+        if (usuario == null || (usuario.Id != requesterId && usuario.Rol != RolUsuario.AdminEmpresa))
+            return false;
+
+        usuario.ImagenPerfilUrl = url;
+        usuario.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+        return true;
+    }
 {
     private readonly AppDbContext _db;
     public UsuarioService(AppDbContext db) => _db = db;

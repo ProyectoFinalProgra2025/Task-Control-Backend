@@ -10,6 +10,26 @@ namespace TaskControlBackend.Controllers
 {
     [Route("api/[controller]")]
     public class TareasController : BaseController
+            // POST /api/tareas/{id}/evidencia - subir evidencias al finalizar tarea
+            [HttpPost("{id:guid}/evidencia")]
+            [Authorize(Roles = "Usuario,ManagerDepartamento")]
+            public async Task<IActionResult> SubirEvidencia(Guid id, [FromForm] TareaEvidenciaDTO dto, [FromServices] IStorageService storageService)
+            {
+                if (string.IsNullOrWhiteSpace(dto.Texto))
+                    return BadRequest(new { success = false, message = "El texto de evidencia es obligatorio." });
+
+                var archivoUrls = new List<string>();
+                if (dto.Archivos != null && dto.Archivos.Count > 0)
+                {
+                    archivoUrls = await storageService.UploadFilesAsync(dto.Archivos, "evidencias-tareas");
+                }
+
+                var result = await _svc.GuardarEvidenciaAsync(id, GetUserId(), dto.Texto, archivoUrls);
+                if (!result)
+                    return BadRequest(new { success = false, message = "No se pudo guardar la evidencia." });
+
+                return Ok(new { success = true, message = "Evidencia guardada correctamente.", data = archivoUrls });
+            }
     {
         private readonly ITareaService _svc;
 

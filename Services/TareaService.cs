@@ -11,6 +11,24 @@ using TaskControlBackend.Services.Interfaces;
 namespace TaskControlBackend.Services
 {
     public class TareaService : ITareaService
+            // Guarda evidencia de finalización de tarea
+            public async Task<bool> GuardarEvidenciaAsync(Guid tareaId, Guid usuarioId, string texto, List<string> archivoUrls)
+            {
+                var tarea = await _db.Tareas.FirstOrDefaultAsync(t => t.Id == tareaId && t.IsActive);
+                if (tarea == null || tarea.AsignadoAUsuarioId != usuarioId)
+                    return false;
+
+                tarea.EvidenciaTexto = texto;
+                tarea.EvidenciaArchivoUrls = archivoUrls;
+                tarea.FinalizadaAt = DateTime.UtcNow;
+                tarea.Estado = EstadoTarea.Finalizada;
+                tarea.UpdatedAt = DateTime.UtcNow;
+
+                await _db.SaveChangesAsync();
+                // Emitir evento SignalR si es necesario
+                await EmitTareaEventAsync(tarea.EmpresaId, "tarea_finalizada", new { tareaId = tarea.Id });
+                return true;
+            }
     {
         private readonly AppDbContext _db;
         private readonly IConfiguration _config;

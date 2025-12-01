@@ -28,6 +28,7 @@ builder.Services.AddScoped<IEmpresaService, EmpresaService>();
 builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<ITareaService, TareaService>();
 builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IStorageService, AzureBlobStorageService>();
 builder.Services.AddControllers();
 
 // SignalR with custom UserIdProvider for JWT authentication

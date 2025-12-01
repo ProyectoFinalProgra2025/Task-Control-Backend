@@ -37,9 +37,9 @@ namespace TaskControlBackend.Models
         public string? MotivoRechazoJefe { get; set; }
         public DateTime? DelegacionResueltaAt { get; set; }
 
-        // Evidencia
-        public string? EvidenciaTexto { get; set; }
-        public string? EvidenciaImagenUrl { get; set; }
+        // Evidencias de finalización
+        public string? EvidenciaTexto { get; set; } // Texto obligatorio
+        public List<string>? EvidenciaArchivoUrls { get; set; } // URLs de imágenes/documentos
         public DateTime? FinalizadaAt { get; set; }
         public string? MotivoCancelacion { get; set; }
 

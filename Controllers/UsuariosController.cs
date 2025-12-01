@@ -12,6 +12,21 @@ namespace TaskControlBackend.Controllers;
 
 [Route("api/[controller]")]
 public class UsuariosController : BaseController
+    // POST /api/usuarios/{id}/imagen-perfil - subir imagen de perfil
+    [HttpPost("{id:guid}/imagen-perfil")]
+    [Authorize]
+    public async Task<IActionResult> SubirImagenPerfil(Guid id, [FromForm] ImagenPerfilDTO dto, [FromServices] IStorageService storageService)
+    {
+        if (dto.Imagen == null)
+            return BadRequest(new { success = false, message = "Debe enviar una imagen." });
+
+        var url = await storageService.UploadFileAsync(dto.Imagen, "imagenes-perfil");
+        var result = await _svc.GuardarImagenPerfilAsync(id, GetUserId(), url);
+        if (!result)
+            return BadRequest(new { success = false, message = "No se pudo guardar la imagen de perfil." });
+
+        return Ok(new { success = true, message = "Imagen de perfil actualizada.", data = url });
+    }
 {
     private readonly AppDbContext _db;
     private readonly IUsuarioService _svc;

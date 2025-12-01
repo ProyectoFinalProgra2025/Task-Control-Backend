@@ -1,0 +1,273 @@
+RESUMEN DETALLADO DE ENDPOINTS Y FUNCIONALIDADES - TASK CONTROL BACKEND (.NET 9)
+================================================================================
+
+Este documento detalla la estructura, configuración y endpoints disponibles en la API REST de Task Control.
+
+INFORMACIÓN GENERAL
+-------------------
+- Framework: .NET 9
+- Autenticación: JWT (JSON Web Tokens) con soporte para Refresh Tokens.
+- Tiempo Real: SignalR configurado en `/tareahub` y `/chathub`.
+- Documentación: Swagger UI disponible en `/swagger`.
+- Base de Datos: SQL Server (Entity Framework Core).
+
+ROLES DEL SISTEMA
+-----------------
+- AdminGeneral: Superadministrador del sistema (gestiona empresas).
+- AdminEmpresa: Administrador de una empresa específica.
+- ManagerDepartamento: Jefe de área/departamento.
+- Usuario: Trabajador estándar.
+
+--------------------------------------------------------------------------------
+1. AUTENTICACIÓN (AuthController)
+   Ruta Base: /api/Auth
+--------------------------------------------------------------------------------
+
+Funcionalidades:
+- Gestión de sesiones (Login, Logout, Refresh Token).
+- Registro de nuevas empresas y administradores.
+
+Endpoints:
+[POST] /login
+  - Descripción: Inicia sesión y devuelve Access Token + Refresh Token.
+  - Acceso: Público.
+
+[POST] /refresh
+  - Descripción: Renueva el Access Token usando un Refresh Token válido.
+  - Acceso: Público.
+
+[POST] /logout
+  - Descripción: Cierra sesión y revoca el Refresh Token.
+  - Acceso: Autenticado.
+
+[POST] /register-adminempresa
+  - Descripción: Registra una nueva empresa y su administrador inicial. La empresa queda en estado "Pending".
+  - Acceso: Público.
+
+[POST] /register-admingeneral
+  - Descripción: Crea un usuario con rol AdminGeneral (Superadmin).
+  - Acceso: Público (con restricciones si ya existe uno).
+
+--------------------------------------------------------------------------------
+2. GESTIÓN DE EMPRESAS (EmpresasController)
+   Ruta Base: /api/Empresas
+--------------------------------------------------------------------------------
+
+Funcionalidades:
+- Administración de empresas (aprobar/rechazar registros).
+- Estadísticas globales de la empresa.
+- Consulta de trabajadores para asignación de tareas.
+
+Endpoints:
+[GET] /{id}/trabajadores-ids
+  - Descripción: Obtiene IDs e información básica de trabajadores, con filtros por departamento y disponibilidad (carga de trabajo).
+  - Acceso: Autenticado (miembros de la empresa).
+
+[GET] /
+  - Descripción: Lista todas las empresas registradas (con filtros por estado).
+  - Acceso: AdminGeneral.
+
+[PUT] /{id}/aprobar
+  - Descripción: Aprueba el registro de una empresa.
+  - Acceso: AdminGeneral.
+
+[PUT] /{id}/rechazar
+  - Descripción: Rechaza el registro de una empresa.
+  - Acceso: AdminGeneral.
+
+[GET] /{id}/estadisticas
+  - Descripción: Devuelve métricas de la empresa (total trabajadores, tareas por estado, etc.).
+  - Acceso: Autenticado (miembros de la empresa).
+
+[DELETE] /{id}
+  - Descripción: Eliminación física (Hard Delete) de una empresa y todos sus datos.
+  - Acceso: AdminGeneral.
+
+--------------------------------------------------------------------------------
+3. GESTIÓN DE USUARIOS (UsuariosController)
+   Ruta Base: /api/Usuarios
+--------------------------------------------------------------------------------
+
+Funcionalidades:
+- CRUD de usuarios (trabajadores).
+- Gestión de perfil propio y dashboard personal.
+- Gestión de capacidades (skills) de los usuarios.
+
+Endpoints:
+[GET] /me
+  - Descripción: Obtiene el perfil completo del usuario autenticado.
+  - Acceso: Autenticado.
+
+[GET] /me/dashboard
+  - Descripción: Estadísticas personales (tareas pendientes, urgentes, de hoy, etc.).
+  - Acceso: Autenticado.
+
+[GET] /me/tareas-recientes
+  - Descripción: Lista las últimas tareas asignadas al usuario.
+  - Acceso: Autenticado.
+
+[POST] /
+  - Descripción: Crea un nuevo usuario en la empresa.
+  - Acceso: AdminEmpresa.
+
+[GET] /
+  - Descripción: Lista usuarios de la empresa (filtro por rol).
+  - Acceso: AdminEmpresa, AdminGeneral, ManagerDepartamento.
+
+[GET] /{id}
+  - Descripción: Obtiene detalles de un usuario específico.
+  - Acceso: Autenticado.
+
+[PUT] /{id}
+  - Descripción: Actualiza datos de un usuario.
+  - Acceso: AdminEmpresa.
+
+[DELETE] /{id}
+  - Descripción: Desactiva un usuario (Soft Delete).
+  - Acceso: AdminEmpresa.
+
+[PUT] /{id}/capacidades
+  - Descripción: Admin actualiza las capacidades de un usuario.
+  - Acceso: AdminEmpresa.
+
+[PUT] /mis-capacidades
+  - Descripción: Usuario actualiza sus propias capacidades.
+  - Acceso: Autenticado.
+
+[DELETE] /mis-capacidades/{capacidadId}
+  - Descripción: Elimina una capacidad del perfil propio.
+  - Acceso: Autenticado.
+
+--------------------------------------------------------------------------------
+4. GESTIÓN DE TAREAS (TareasController)
+   Ruta Base: /api/Tareas
+--------------------------------------------------------------------------------
+
+Funcionalidades:
+- Ciclo de vida completo de tareas (Crear -> Asignar -> Aceptar -> Finalizar).
+- Asignación manual y automática (basada en IA/algoritmos).
+- Delegación de tareas entre jefes.
+- Cancelación y reasignación.
+
+Endpoints:
+[POST] /
+  - Descripción: Crea una nueva tarea (estado inicial: Pendiente).
+  - Acceso: AdminEmpresa, ManagerDepartamento.
+
+[GET] /
+  - Descripción: Lista tareas de la empresa con múltiples filtros (estado, prioridad, departamento, asignadoA).
+  - Acceso: Autenticado.
+
+[GET] /{id}
+  - Descripción: Obtiene detalles completos de una tarea.
+  - Acceso: Autenticado.
+
+[PUT] /{id}/asignar-manual
+  - Descripción: Asigna una tarea a un usuario específico.
+  - Acceso: AdminEmpresa, ManagerDepartamento.
+
+[PUT] /{id}/asignar-automatico
+  - Descripción: Ejecuta el algoritmo de asignación automática para la tarea.
+  - Acceso: AdminEmpresa, ManagerDepartamento.
+
+[PUT] /{id}/aceptar
+  - Descripción: El trabajador acepta la tarea asignada.
+  - Acceso: Usuario, ManagerDepartamento.
+
+[GET] /mis
+  - Descripción: Lista exclusivamente las tareas asignadas al usuario actual.
+  - Acceso: Usuario, ManagerDepartamento.
+
+[PUT] /{id}/finalizar
+  - Descripción: Marca la tarea como finalizada (requiere evidencia/comentario).
+  - Acceso: Usuario, ManagerDepartamento.
+
+[PUT] /{id}/cancelar
+  - Descripción: Cancela una tarea.
+  - Acceso: AdminEmpresa, ManagerDepartamento.
+
+[PUT] /{id}/reasignar
+  - Descripción: Reasigna una tarea a otro usuario.
+  - Acceso: AdminEmpresa, ManagerDepartamento.
+
+[GET] /{id}/historial-asignaciones
+  - Descripción: Muestra el historial de cambios de asignación de la tarea.
+  - Acceso: Autenticado.
+
+[PUT] /{id}/delegar
+  - Descripción: Delega la tarea a otro jefe de departamento.
+  - Acceso: AdminEmpresa, ManagerDepartamento.
+
+[PUT] /{id}/aceptar-delegacion
+  - Descripción: El jefe destino acepta la delegación.
+  - Acceso: ManagerDepartamento.
+
+[PUT] /{id}/rechazar-delegacion
+  - Descripción: El jefe destino rechaza la delegación.
+  - Acceso: ManagerDepartamento.
+
+--------------------------------------------------------------------------------
+5. CHAT Y MENSAJERÍA (ChatController)
+   Ruta Base: /api/Chat
+--------------------------------------------------------------------------------
+
+Funcionalidades:
+- Chat en tiempo real (respaldado por SignalR y persistencia en BD).
+- Conversaciones directas (1 a 1) y grupales.
+- Envío de texto y archivos (imágenes, documentos, audio, video).
+- Estados de mensajes (Enviado, Entregado, Leído).
+
+Endpoints:
+[GET] /users/search
+  - Descripción: Busca usuarios para iniciar conversaciones.
+
+[GET] /conversations
+  - Descripción: Obtiene todas las conversaciones del usuario.
+
+[GET] /conversations/{id}
+  - Descripción: Obtiene detalles de una conversación específica.
+
+[POST] /conversations/direct
+  - Descripción: Crea o recupera una conversación privada con otro usuario.
+
+[POST] /conversations/group
+  - Descripción: Crea un grupo de chat.
+
+[PUT] /conversations/{id}
+  - Descripción: Actualiza nombre o imagen del grupo.
+
+[GET] /conversations/{id}/messages
+  - Descripción: Obtiene el historial de mensajes (paginado).
+
+[POST] /conversations/{id}/files
+  - Descripción: Envía un archivo a la conversación (soporta multipart/form-data).
+
+[POST] /conversations/{id}/messages
+  - Descripción: Envía un mensaje de texto.
+
+[PUT] /messages/{id}
+  - Descripción: Edita un mensaje existente.
+
+[DELETE] /messages/{id}
+  - Descripción: Elimina un mensaje.
+
+[POST] /messages/{id}/delivered
+  - Descripción: Marca un mensaje como entregado.
+
+[POST] /messages/{id}/read
+  - Descripción: Marca un mensaje como leído.
+
+[POST] /conversations/{id}/read-all
+  - Descripción: Marca todos los mensajes de una conversación como leídos.
+
+[GET] /conversations/{id}/unread-count
+  - Descripción: Obtiene el número de mensajes no leídos.
+
+--------------------------------------------------------------------------------
+NOTAS TÉCNICAS ADICIONALES
+--------------------------------------------------------------------------------
+- SignalR Hubs:
+  - /tareahub: Eventos de tareas, notificaciones generales y métricas.
+  - /chathub: Eventos exclusivos de mensajería instantánea.
+- Manejo de Errores: Respuestas estandarizadas con campos `success`, `message` y `data`.
+- Seguridad: Todos los endpoints (excepto Login/Register) requieren cabecera `Authorization: Bearer <token>`.

@@ -27,4 +27,7 @@ public class Usuario
 
     // Si ya agregaste capacidades:
     public ICollection<UsuarioCapacidad> UsuarioCapacidades { get; set; } = new List<UsuarioCapacidad>();
+
+    // Imagen de perfil
+    public string? ImagenPerfilUrl { get; set; }
 }
