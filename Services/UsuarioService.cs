@@ -16,12 +16,20 @@ public class UsuarioService : IUsuarioService
     public UsuarioService(AppDbContext db) => _db = db;
 
     // CREA UN NUEVO USUARIO CON CONTRASEÑA HASHEADA
-    public async Task<Guid> CreateAsync(Guid empresaId, CreateUsuarioDTO dto)
+    public async Task<Guid> CreateAsync(Guid empresaId, CreateUsuarioDTO dto, bool requesterIsAdminGeneral)
     {
-        // Determinar el rol (por defecto Usuario)
         var rol = dto.Rol ?? RolUsuario.Usuario;
-        
-        // Validar que ManagerDepartamento tenga departamento
+
+        // Validación de seguridad
+        if (!requesterIsAdminGeneral)
+        {
+            // AdminEmpresa solo puede crear Usuario o ManagerDepartamento
+            if (rol == RolUsuario.AdminGeneral || rol == RolUsuario.AdminEmpresa)
+            {
+                throw new UnauthorizedAccessException("No tiene permisos para asignar este rol.");
+            }
+        }
+
         if (rol == RolUsuario.ManagerDepartamento && dto.Departamento == null)
         {
             throw new ArgumentException("ManagerDepartamento debe tener un departamento asignado");
@@ -166,6 +174,18 @@ public class UsuarioService : IUsuarioService
 
         u.IsActive = false;
         u.UpdatedAt = DateTime.UtcNow;
+
+        // Liberar tareas asignadas o aceptadas del usuario desactivado
+        var tareas = await _db.Tareas
+            .Where(t => t.AsignadoAUsuarioId == u.Id && (t.Estado == EstadoTarea.Asignada || t.Estado == EstadoTarea.Aceptada))
+            .ToListAsync();
+
+        foreach (var tarea in tareas)
+        {
+            tarea.Estado = EstadoTarea.Pendiente;
+            tarea.AsignadoAUsuarioId = null;
+        }
+
         await _db.SaveChangesAsync();
     }
 
@@ -526,5 +546,41 @@ public class UsuarioService : IUsuarioService
         const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%";
         var random = new Random();
         return new string(Enumerable.Repeat(chars, 12).Select(s => s[random.Next(s.Length)]).ToArray());
+    }
+
+    // Cambia la contraseña de un usuario por AdminEmpresa
+    public async Task CambiarPasswordPorAdminEmpresaAsync(Guid adminEmpresaId, ChangePasswordAdminEmpresaDTO dto)
+    {
+        var admin = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == adminEmpresaId && u.Rol == RolUsuario.AdminEmpresa && u.IsActive);
+        if (admin == null)
+            throw new UnauthorizedAccessException("Solo un AdminEmpresa activo puede realizar esta acción.");
+
+        var usuario = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == dto.UsuarioId && u.EmpresaId == admin.EmpresaId && u.IsActive);
+        if (usuario == null)
+            throw new KeyNotFoundException("Usuario no encontrado o inactivo en la empresa.");
+
+        PasswordHasher.CreatePasswordHash(dto.NuevaPassword, out var hash, out var salt);
+        usuario.PasswordHash = hash;
+        usuario.PasswordSalt = salt;
+        usuario.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
+    }
+
+    // Cambia la contraseña de un AdminEmpresa por AdminGeneral
+    public async Task CambiarPasswordAdminEmpresaPorAdminGeneralAsync(Guid adminGeneralId, ChangePasswordAdminGeneralDTO dto)
+    {
+        var adminGeneral = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == adminGeneralId && u.Rol == RolUsuario.AdminGeneral && u.IsActive);
+        if (adminGeneral == null)
+            throw new UnauthorizedAccessException("Solo un AdminGeneral activo puede realizar esta acción.");
+
+        var adminEmpresa = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == dto.UsuarioId && u.Rol == RolUsuario.AdminEmpresa && u.IsActive);
+        if (adminEmpresa == null)
+            throw new KeyNotFoundException("AdminEmpresa no encontrado o inactivo.");
+
+        PasswordHasher.CreatePasswordHash(dto.NuevaPassword, out var hash, out var salt);
+        adminEmpresa.PasswordHash = hash;
+        adminEmpresa.PasswordSalt = salt;
+        adminEmpresa.UpdatedAt = DateTime.UtcNow;
+        await _db.SaveChangesAsync();
     }
 }

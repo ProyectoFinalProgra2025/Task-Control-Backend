@@ -39,6 +39,10 @@ namespace TaskControlBackend.Services
             if (user is null || !PasswordHasher.VerifyPassword(dto.Password, user.PasswordHash, user.PasswordSalt))
                 throw new UnauthorizedAccessException("Credenciales inválidas");
 
+            // Validar usuario activo
+            if (!user.IsActive)
+                throw new UnauthorizedAccessException("Usuario desactivado. No puede iniciar sesión.");
+
             // Validaciones según rol
             if (user.Rol == RolUsuario.AdminEmpresa || user.Rol == RolUsuario.Usuario)
             {
