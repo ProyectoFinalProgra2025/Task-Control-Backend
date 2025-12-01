@@ -13,6 +13,16 @@ namespace TaskControlBackend.Controllers;
 [Route("api/[controller]")]
 public class UsuariosController : BaseController
 {
+    // GET api/usuarios/adminempresa-por-empresaid?empresaId=xxxx
+    [HttpGet("adminempresa-por-empresaid")]
+    public async Task<IActionResult> GetAdminEmpresaByEmpresaId([FromQuery] Guid empresaId)
+    {
+        if (!IsAdminGeneral()) return Forbid();
+        var adminEmpresa = await _db.Usuarios.FirstOrDefaultAsync(u => u.EmpresaId == empresaId && u.Rol == RolUsuario.AdminEmpresa && u.IsActive);
+        if (adminEmpresa == null)
+            return NotFound(new { success = false, message = "No existe un AdminEmpresa activo para esa empresa." });
+        return Ok(new { success = true, data = new { usuarioId = adminEmpresa.Id, email = adminEmpresa.Email, nombreCompleto = adminEmpresa.NombreCompleto, empresaId = adminEmpresa.EmpresaId } });
+    }
     // PUT api/usuarios/cambiar-password-usuario (AdminEmpresa cambia contraseña de usuario de su empresa)
     [HttpPut("cambiar-password-usuario")]
     public async Task<IActionResult> CambiarPasswordUsuario([FromBody] ChangePasswordAdminEmpresaDTO dto)
@@ -153,7 +163,7 @@ public class UsuariosController : BaseController
         var empresaId = GetEmpresaId();
         if (empresaId is null) return Unauthorized();
 
-        var id = await _svc.CreateAsync(empresaId.Value, dto);
+        var id = await _svc.CreateAsync(empresaId.Value, dto, IsAdminGeneral());
         return StatusCode(201, new { success = true, message = "Usuario creado", data = new { id } });
     }
 

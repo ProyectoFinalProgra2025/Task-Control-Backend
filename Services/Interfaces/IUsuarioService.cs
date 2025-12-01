@@ -10,7 +10,7 @@ public interface IUsuarioService
 
     // Permite a AdminGeneral cambiar la contraseña de AdminEmpresa
     Task CambiarPasswordAdminEmpresaPorAdminGeneralAsync(Guid adminGeneralId, ChangePasswordAdminGeneralDTO dto);
-    Task<Guid> CreateAsync(Guid empresaId, CreateUsuarioDTO dto);
+    Task<Guid> CreateAsync(Guid empresaId, CreateUsuarioDTO dto, bool requesterIsAdminGeneral);
 
     Task<UsuarioDTO?> GetAsync(
         Guid requesterUserId,

@@ -15,12 +15,20 @@ public class UsuarioService : IUsuarioService
     public UsuarioService(AppDbContext db) => _db = db;
 
     // CREA UN NUEVO USUARIO CON CONTRASEÑA HASHEADA
-    public async Task<Guid> CreateAsync(Guid empresaId, CreateUsuarioDTO dto)
+    public async Task<Guid> CreateAsync(Guid empresaId, CreateUsuarioDTO dto, bool requesterIsAdminGeneral)
     {
-        // Determinar el rol (por defecto Usuario)
         var rol = dto.Rol ?? RolUsuario.Usuario;
-        
-        // Validar que ManagerDepartamento tenga departamento
+
+        // Validación de seguridad
+        if (!requesterIsAdminGeneral)
+        {
+            // AdminEmpresa solo puede crear Usuario o ManagerDepartamento
+            if (rol == RolUsuario.AdminGeneral || rol == RolUsuario.AdminEmpresa)
+            {
+                throw new UnauthorizedAccessException("No tiene permisos para asignar este rol.");
+            }
+        }
+
         if (rol == RolUsuario.ManagerDepartamento && dto.Departamento == null)
         {
             throw new ArgumentException("ManagerDepartamento debe tener un departamento asignado");
