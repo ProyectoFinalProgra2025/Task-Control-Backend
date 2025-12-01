@@ -334,9 +334,10 @@ public class ChatService : IChatService
         Guid conversationId,
         MessageContentType contentType,
         string? content,
-        Stream fileData,
+        string fileUrl,
         string fileName,
         string fileMimeType,
+        long fileSizeBytes,
         Guid? replyToMessageId = null)
     {
         // Validar que sea miembro de la conversación
@@ -348,21 +349,19 @@ public class ChatService : IChatService
         if (!isMember)
             throw new UnauthorizedAccessException("No perteneces a esta conversación");
 
-        // Por ahora, solo guardamos metadata del archivo sin subirlo a almacenamiento
-        // TODO: Implementar subida a Azure Blob Storage o similar cuando se requiera
-
         var message = new ChatMessage
         {
             ConversationId = conversationId,
             SenderId = senderId,
             ContentType = contentType,
             Content = content ?? $"📎 {fileName}",
+            FileUrl = fileUrl,
             FileName = fileName,
             FileMimeType = fileMimeType,
+            FileSizeBytes = fileSizeBytes,
             SentAt = DateTimeOffset.UtcNow,
             Status = MessageStatus.Sent,
-            ReplyToMessageId = replyToMessageId,
-            FileSizeBytes = (int)fileData.Length
+            ReplyToMessageId = replyToMessageId
         };
 
         _db.ChatMessages.Add(message);

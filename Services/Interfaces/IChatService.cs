@@ -93,22 +93,16 @@ public interface IChatService
     /// - fileData: Stream del archivo (TODO: implementar upload a Blob Storage)
     /// - fileName: Nombre original del archivo
     /// - fileMimeType: MIME type (ej: "image/png", "application/pdf")
-    ///
-    /// TODO IMPLEMENTAR:
-    /// 1. Validar tipo y tamaño de archivo
-    /// 2. Subir archivo a Azure Blob Storage
-    /// 3. Generar URL del archivo en Blob Storage
-    /// 4. Crear ChatMessage con FileUrl, FileName, FileSizeBytes, FileMimeType
-    /// 5. Crear MessageDeliveryStatus para todos los miembros
     /// </summary>
     Task<ChatMessage> SendFileMessageAsync(
         Guid senderId,
         Guid conversationId,
         MessageContentType contentType,
         string? content,
-        Stream fileData,
+        string fileUrl,
         string fileName,
         string fileMimeType,
+        long fileSizeBytes,
         Guid? replyToMessageId = null);
 
     /// <summary>

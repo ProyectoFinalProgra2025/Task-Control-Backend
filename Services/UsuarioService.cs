@@ -1,4 +1,5 @@
 ﻿using System.Linq;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using TaskControlBackend.Data;
 using TaskControlBackend.DTOs.Usuario;
@@ -82,6 +83,7 @@ public class UsuarioService : IUsuarioService
             EmpresaId = u.EmpresaId ?? Guid.Empty,
             Departamento = u.Departamento?.ToString(),
             NivelHabilidad = u.NivelHabilidad,
+            FotoPerfilUrl = u.FotoPerfilUrl,
             IsActive = u.IsActive,
             Capacidades = u.UsuarioCapacidades
                 .Select(uc => new CapacidadNivelView
@@ -283,5 +285,246 @@ public class UsuarioService : IUsuarioService
         usuario.UpdatedAt = DateTime.UtcNow;
 
         await _db.SaveChangesAsync();
+    }
+
+    // ==================== NUEVOS MÉTODOS ====================
+
+    /// <summary>
+    /// Actualiza la foto de perfil de un usuario
+    /// </summary>
+    public async Task<string> UpdateFotoPerfilAsync(Guid usuarioId, Guid empresaId, string fotoUrl)
+    {
+        var usuario = await _db.Usuarios
+            .FirstOrDefaultAsync(u => u.Id == usuarioId && u.EmpresaId == empresaId);
+
+        if (usuario is null)
+            throw new KeyNotFoundException("Usuario no encontrado");
+
+        usuario.FotoPerfilUrl = fotoUrl;
+        usuario.UpdatedAt = DateTime.UtcNow;
+
+        await _db.SaveChangesAsync();
+
+        return fotoUrl;
+    }
+
+    /// <summary>
+    /// Importa usuarios desde un archivo CSV
+    /// Formato esperado: Email,NombreCompleto,Telefono,Rol,Departamento,NivelHabilidad
+    /// </summary>
+    public async Task<ImportarUsuariosResultadoDTO> ImportarUsuariosDesdeCsvAsync(
+        Guid empresaId, 
+        Stream csvStream, 
+        string? passwordPorDefecto = null)
+    {
+        var resultado = new ImportarUsuariosResultadoDTO();
+        var filas = new List<UsuarioCsvRowDTO>();
+
+        // Leer y parsear el CSV
+        using (var reader = new StreamReader(csvStream))
+        {
+            string? headerLine = await reader.ReadLineAsync();
+            if (string.IsNullOrWhiteSpace(headerLine))
+                throw new ArgumentException("El archivo CSV está vacío");
+
+            // Parsear encabezados
+            var headers = ParseCsvLine(headerLine);
+            var headerMap = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < headers.Length; i++)
+            {
+                headerMap[headers[i].Trim()] = i;
+            }
+
+            // Validar encabezados requeridos
+            if (!headerMap.ContainsKey("Email") || !headerMap.ContainsKey("NombreCompleto"))
+                throw new ArgumentException("El CSV debe contener al menos las columnas: Email, NombreCompleto");
+
+            int filaNum = 1;
+            string? line;
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                filaNum++;
+                if (string.IsNullOrWhiteSpace(line)) continue;
+
+                var values = ParseCsvLine(line);
+                
+                var row = new UsuarioCsvRowDTO
+                {
+                    Email = GetCsvValue(values, headerMap, "Email") ?? "",
+                    NombreCompleto = GetCsvValue(values, headerMap, "NombreCompleto") ?? "",
+                    Telefono = GetCsvValue(values, headerMap, "Telefono"),
+                    Rol = GetCsvValue(values, headerMap, "Rol") ?? "Usuario",
+                    Departamento = GetCsvValue(values, headerMap, "Departamento"),
+                    NivelHabilidad = ParseNivelHabilidad(GetCsvValue(values, headerMap, "NivelHabilidad"))
+                };
+
+                filas.Add(row);
+            }
+        }
+
+        // Procesar cada fila
+        int filaIndex = 1;
+        foreach (var fila in filas)
+        {
+            filaIndex++;
+            var resultadoFila = new ImportarUsuarioResultadoDTO
+            {
+                Fila = filaIndex,
+                Email = fila.Email,
+                NombreCompleto = fila.NombreCompleto
+            };
+
+            try
+            {
+                // Validar email
+                if (string.IsNullOrWhiteSpace(fila.Email))
+                    throw new ArgumentException("Email es requerido");
+
+                if (string.IsNullOrWhiteSpace(fila.NombreCompleto))
+                    throw new ArgumentException("NombreCompleto es requerido");
+
+                // Verificar si el email ya existe
+                var existeEmail = await _db.Usuarios
+                    .IgnoreQueryFilters()
+                    .AnyAsync(u => u.Email.ToLower() == fila.Email.ToLower() && u.EmpresaId == empresaId);
+
+                if (existeEmail)
+                    throw new ArgumentException($"El email '{fila.Email}' ya está registrado");
+
+                // Parsear rol
+                var rol = ParseRol(fila.Rol);
+                
+                // Parsear departamento
+                Departamento? departamento = ParseDepartamento(fila.Departamento);
+
+                // Validar que ManagerDepartamento tenga departamento
+                if (rol == RolUsuario.ManagerDepartamento && departamento == null)
+                    throw new ArgumentException("ManagerDepartamento debe tener un departamento asignado");
+
+                // Generar contraseña
+                var password = passwordPorDefecto ?? GenerarPasswordAleatorio();
+
+                PasswordHasher.CreatePasswordHash(password, out var hash, out var salt);
+
+                var usuario = new Usuario
+                {
+                    Email = fila.Email.Trim(),
+                    NombreCompleto = fila.NombreCompleto.Trim(),
+                    Telefono = fila.Telefono?.Trim(),
+                    PasswordHash = hash,
+                    PasswordSalt = salt,
+                    Rol = rol,
+                    EmpresaId = empresaId,
+                    Departamento = departamento,
+                    NivelHabilidad = fila.NivelHabilidad
+                };
+
+                _db.Usuarios.Add(usuario);
+                await _db.SaveChangesAsync();
+
+                resultadoFila.Exitoso = true;
+                resultadoFila.UsuarioId = usuario.Id;
+                resultadoFila.PasswordGenerado = passwordPorDefecto == null ? password : null;
+                resultado.Exitosos++;
+            }
+            catch (Exception ex)
+            {
+                resultadoFila.Exitoso = false;
+                resultadoFila.Error = ex.Message;
+                resultado.Fallidos++;
+            }
+
+            resultado.Resultados.Add(resultadoFila);
+            resultado.TotalProcesados++;
+        }
+
+        return resultado;
+    }
+
+    private string[] ParseCsvLine(string line)
+    {
+        var result = new List<string>();
+        var current = new System.Text.StringBuilder();
+        bool inQuotes = false;
+
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+
+            if (c == '"')
+            {
+                inQuotes = !inQuotes;
+            }
+            else if (c == ',' && !inQuotes)
+            {
+                result.Add(current.ToString().Trim());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(c);
+            }
+        }
+        result.Add(current.ToString().Trim());
+
+        return result.ToArray();
+    }
+
+    private string? GetCsvValue(string[] values, Dictionary<string, int> headerMap, string columnName)
+    {
+        if (!headerMap.TryGetValue(columnName, out int index) || index >= values.Length)
+            return null;
+        
+        var value = values[index].Trim().Trim('"');
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private int? ParseNivelHabilidad(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (int.TryParse(value, out int nivel) && nivel >= 1 && nivel <= 5)
+            return nivel;
+        return null;
+    }
+
+    private RolUsuario ParseRol(string? rol)
+    {
+        if (string.IsNullOrWhiteSpace(rol))
+            return RolUsuario.Usuario;
+
+        return rol.Trim().ToLower() switch
+        {
+            "manager" or "managerdepartamento" or "jefe" => RolUsuario.ManagerDepartamento,
+            "usuario" or "worker" or "trabajador" => RolUsuario.Usuario,
+            _ => RolUsuario.Usuario
+        };
+    }
+
+    private Departamento? ParseDepartamento(string? depto)
+    {
+        if (string.IsNullOrWhiteSpace(depto)) return null;
+
+        // Intentar parsear como enum
+        if (Enum.TryParse<Departamento>(depto.Trim(), true, out var result))
+            return result;
+
+        // Mapeos alternativos
+        return depto.Trim().ToLower() switch
+        {
+            "finanzas" or "finance" or "contabilidad" => Departamento.Finanzas,
+            "mantenimiento" or "maintenance" => Departamento.Mantenimiento,
+            "produccion" or "production" => Departamento.Produccion,
+            "marketing" or "mercadeo" => Departamento.Marketing,
+            "logistica" or "logistics" => Departamento.Logistica,
+            "ninguno" or "none" => Departamento.Ninguno,
+            _ => null
+        };
+    }
+
+    private string GenerarPasswordAleatorio()
+    {
+        const string chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%";
+        var random = new Random();
+        return new string(Enumerable.Repeat(chars, 12).Select(s => s[random.Next(s.Length)]).ToArray());
     }
 }

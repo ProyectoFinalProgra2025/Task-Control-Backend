@@ -542,6 +542,10 @@ namespace TaskControlBackend.Services
                 .Include(t => t.CapacidadesRequeridas)
                 .Include(t => t.DelegadoPorUsuario)
                 .Include(t => t.DelegadoAUsuario)
+                .Include(t => t.DocumentosAdjuntos)
+                    .ThenInclude(d => d.SubidoPorUsuario)
+                .Include(t => t.Evidencias)
+                    .ThenInclude(e => e.SubidoPorUsuario)
                 .FirstOrDefaultAsync(t => t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
 
             if (t is null) return null;
@@ -566,6 +570,29 @@ namespace TaskControlBackend.Services
                 CreatedByUsuarioNombre = t.CreatedByUsuario != null ? t.CreatedByUsuario.NombreCompleto : string.Empty,
                 EvidenciaTexto = t.EvidenciaTexto,
                 EvidenciaImagenUrl = t.EvidenciaImagenUrl,
+                DocumentosAdjuntos = t.DocumentosAdjuntos.Select(d => new DocumentoAdjuntoDTO
+                {
+                    Id = d.Id,
+                    NombreArchivo = d.NombreArchivo,
+                    ArchivoUrl = d.ArchivoUrl,
+                    TipoMime = d.TipoMime,
+                    TamanoBytes = d.TamanoBytes,
+                    SubidoPorUsuarioId = d.SubidoPorUsuarioId,
+                    SubidoPorUsuarioNombre = d.SubidoPorUsuario.NombreCompleto,
+                    CreatedAt = d.CreatedAt
+                }).OrderByDescending(d => d.CreatedAt).ToList(),
+                Evidencias = t.Evidencias.Select(e => new EvidenciaDTO
+                {
+                    Id = e.Id,
+                    Descripcion = e.Descripcion,
+                    NombreArchivo = e.NombreArchivo,
+                    ArchivoUrl = e.ArchivoUrl,
+                    TipoMime = e.TipoMime,
+                    TamanoBytes = e.TamanoBytes,
+                    SubidoPorUsuarioId = e.SubidoPorUsuarioId,
+                    SubidoPorUsuarioNombre = e.SubidoPorUsuario.NombreCompleto,
+                    CreatedAt = e.CreatedAt
+                }).OrderByDescending(e => e.CreatedAt).ToList(),
                 EstaDelegada = t.EstaDelegada,
                 DelegadoPorUsuarioId = t.DelegadoPorUsuarioId,
                 DelegadoPorUsuarioNombre = t.DelegadoPorUsuario != null ? t.DelegadoPorUsuario.NombreCompleto : null,
@@ -976,6 +1003,206 @@ namespace TaskControlBackend.Services
                 tarea.Departamento = jefeOrigen.Departamento;
             }
 
+            await _db.SaveChangesAsync();
+        }
+
+        // ============================================================
+        // DOCUMENTOS Y EVIDENCIAS
+        // ============================================================
+
+        /// <summary>
+        /// Agrega un documento adjunto a una tarea
+        /// </summary>
+        public async Task<DocumentoAdjuntoDTO> AgregarDocumentoAdjuntoAsync(
+            Guid empresaId, Guid tareaId, Guid usuarioId,
+            string nombreArchivo, string archivoUrl, string tipoMime, long tamanoBytes)
+        {
+            var tarea = await _db.Tareas
+                .FirstOrDefaultAsync(t => t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
+
+            if (tarea is null)
+                throw new KeyNotFoundException("Tarea no encontrada");
+
+            var usuario = await _db.Usuarios
+                .FirstOrDefaultAsync(u => u.Id == usuarioId && u.EmpresaId == empresaId);
+
+            if (usuario is null)
+                throw new UnauthorizedAccessException("Usuario no encontrado");
+
+            var documento = new TareaDocumentoAdjunto
+            {
+                TareaId = tareaId,
+                NombreArchivo = nombreArchivo,
+                ArchivoUrl = archivoUrl,
+                TipoMime = tipoMime,
+                TamanoBytes = tamanoBytes,
+                SubidoPorUsuarioId = usuarioId
+            };
+
+            _db.TareasDocumentosAdjuntos.Add(documento);
+            tarea.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+
+            return new DocumentoAdjuntoDTO
+            {
+                Id = documento.Id,
+                NombreArchivo = documento.NombreArchivo,
+                ArchivoUrl = documento.ArchivoUrl,
+                TipoMime = documento.TipoMime,
+                TamanoBytes = documento.TamanoBytes,
+                SubidoPorUsuarioId = documento.SubidoPorUsuarioId,
+                SubidoPorUsuarioNombre = usuario.NombreCompleto,
+                CreatedAt = documento.CreatedAt
+            };
+        }
+
+        /// <summary>
+        /// Agrega una evidencia a una tarea
+        /// </summary>
+        public async Task<EvidenciaDTO> AgregarEvidenciaAsync(
+            Guid empresaId, Guid tareaId, Guid usuarioId,
+            string? descripcion, string? nombreArchivo, string? archivoUrl, string? tipoMime, long tamanoBytes)
+        {
+            var tarea = await _db.Tareas
+                .FirstOrDefaultAsync(t => t.Id == tareaId && t.EmpresaId == empresaId && t.IsActive);
+
+            if (tarea is null)
+                throw new KeyNotFoundException("Tarea no encontrada");
+
+            // Validar que el usuario sea el asignado o tenga permisos
+            if (tarea.AsignadoAUsuarioId != usuarioId)
+            {
+                var usuario = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId && u.EmpresaId == empresaId);
+                if (usuario?.Rol != RolUsuario.AdminEmpresa && usuario?.Rol != RolUsuario.ManagerDepartamento)
+                    throw new UnauthorizedAccessException("Solo el usuario asignado puede agregar evidencias");
+            }
+
+            var usuarioNombre = await _db.Usuarios
+                .Where(u => u.Id == usuarioId)
+                .Select(u => u.NombreCompleto)
+                .FirstOrDefaultAsync() ?? "Desconocido";
+
+            var evidencia = new TareaEvidencia
+            {
+                TareaId = tareaId,
+                Descripcion = descripcion,
+                NombreArchivo = nombreArchivo,
+                ArchivoUrl = archivoUrl,
+                TipoMime = tipoMime,
+                TamanoBytes = tamanoBytes,
+                SubidoPorUsuarioId = usuarioId
+            };
+
+            _db.TareasEvidencias.Add(evidencia);
+            tarea.UpdatedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+
+            return new EvidenciaDTO
+            {
+                Id = evidencia.Id,
+                Descripcion = evidencia.Descripcion,
+                NombreArchivo = evidencia.NombreArchivo,
+                ArchivoUrl = evidencia.ArchivoUrl,
+                TipoMime = evidencia.TipoMime,
+                TamanoBytes = evidencia.TamanoBytes,
+                SubidoPorUsuarioId = evidencia.SubidoPorUsuarioId,
+                SubidoPorUsuarioNombre = usuarioNombre,
+                CreatedAt = evidencia.CreatedAt
+            };
+        }
+
+        /// <summary>
+        /// Obtiene los documentos adjuntos de una tarea
+        /// </summary>
+        public async Task<List<DocumentoAdjuntoDTO>> GetDocumentosAdjuntosAsync(Guid empresaId, Guid tareaId)
+        {
+            return await _db.TareasDocumentosAdjuntos
+                .Include(d => d.SubidoPorUsuario)
+                .Where(d => d.TareaId == tareaId && d.Tarea.EmpresaId == empresaId)
+                .OrderByDescending(d => d.CreatedAt)
+                .Select(d => new DocumentoAdjuntoDTO
+                {
+                    Id = d.Id,
+                    NombreArchivo = d.NombreArchivo,
+                    ArchivoUrl = d.ArchivoUrl,
+                    TipoMime = d.TipoMime,
+                    TamanoBytes = d.TamanoBytes,
+                    SubidoPorUsuarioId = d.SubidoPorUsuarioId,
+                    SubidoPorUsuarioNombre = d.SubidoPorUsuario.NombreCompleto,
+                    CreatedAt = d.CreatedAt
+                })
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene las evidencias de una tarea
+        /// </summary>
+        public async Task<List<EvidenciaDTO>> GetEvidenciasAsync(Guid empresaId, Guid tareaId)
+        {
+            return await _db.TareasEvidencias
+                .Include(e => e.SubidoPorUsuario)
+                .Where(e => e.TareaId == tareaId && e.Tarea.EmpresaId == empresaId)
+                .OrderByDescending(e => e.CreatedAt)
+                .Select(e => new EvidenciaDTO
+                {
+                    Id = e.Id,
+                    Descripcion = e.Descripcion,
+                    NombreArchivo = e.NombreArchivo,
+                    ArchivoUrl = e.ArchivoUrl,
+                    TipoMime = e.TipoMime,
+                    TamanoBytes = e.TamanoBytes,
+                    SubidoPorUsuarioId = e.SubidoPorUsuarioId,
+                    SubidoPorUsuarioNombre = e.SubidoPorUsuario.NombreCompleto,
+                    CreatedAt = e.CreatedAt
+                })
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Elimina un documento adjunto
+        /// </summary>
+        public async Task EliminarDocumentoAdjuntoAsync(Guid empresaId, Guid tareaId, Guid documentoId, Guid usuarioId)
+        {
+            var documento = await _db.TareasDocumentosAdjuntos
+                .Include(d => d.Tarea)
+                .FirstOrDefaultAsync(d => d.Id == documentoId && d.TareaId == tareaId && d.Tarea.EmpresaId == empresaId);
+
+            if (documento is null)
+                throw new KeyNotFoundException("Documento no encontrado");
+
+            // Solo el que subió el documento o un admin puede eliminarlo
+            if (documento.SubidoPorUsuarioId != usuarioId)
+            {
+                var usuario = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId);
+                if (usuario?.Rol != RolUsuario.AdminEmpresa)
+                    throw new UnauthorizedAccessException("No tienes permisos para eliminar este documento");
+            }
+
+            _db.TareasDocumentosAdjuntos.Remove(documento);
+            await _db.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Elimina una evidencia
+        /// </summary>
+        public async Task EliminarEvidenciaAsync(Guid empresaId, Guid tareaId, Guid evidenciaId, Guid usuarioId)
+        {
+            var evidencia = await _db.TareasEvidencias
+                .Include(e => e.Tarea)
+                .FirstOrDefaultAsync(e => e.Id == evidenciaId && e.TareaId == tareaId && e.Tarea.EmpresaId == empresaId);
+
+            if (evidencia is null)
+                throw new KeyNotFoundException("Evidencia no encontrada");
+
+            // Solo el que subió la evidencia o un admin puede eliminarla
+            if (evidencia.SubidoPorUsuarioId != usuarioId)
+            {
+                var usuario = await _db.Usuarios.FirstOrDefaultAsync(u => u.Id == usuarioId);
+                if (usuario?.Rol != RolUsuario.AdminEmpresa)
+                    throw new UnauthorizedAccessException("No tienes permisos para eliminar esta evidencia");
+            }
+
+            _db.TareasEvidencias.Remove(evidencia);
             await _db.SaveChangesAsync();
         }
     }
