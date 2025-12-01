@@ -37,7 +37,7 @@ namespace TaskControlBackend.Models
         public string? MotivoRechazoJefe { get; set; }
         public DateTime? DelegacionResueltaAt { get; set; }
 
-        // Evidencia
+        // Evidencia (mantener compatibilidad con evidencia simple)
         public string? EvidenciaTexto { get; set; }
         public string? EvidenciaImagenUrl { get; set; }
         public DateTime? FinalizadaAt { get; set; }
@@ -48,5 +48,11 @@ namespace TaskControlBackend.Models
         public DateTime? UpdatedAt { get; set; }
 
         public ICollection<TareaCapacidadRequerida> CapacidadesRequeridas { get; set; } = new List<TareaCapacidadRequerida>();
+        
+        // DOCUMENTOS ADJUNTOS - Archivos que se adjuntan al crear la tarea
+        public ICollection<TareaDocumentoAdjunto> DocumentosAdjuntos { get; set; } = new List<TareaDocumentoAdjunto>();
+        
+        // EVIDENCIAS MÚLTIPLES - Evidencias con archivos (PDF, Excel, imágenes, etc.)
+        public ICollection<TareaEvidencia> Evidencias { get; set; } = new List<TareaEvidencia>();
     }
 }

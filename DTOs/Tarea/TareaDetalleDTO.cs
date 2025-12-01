@@ -24,8 +24,13 @@ namespace TaskControlBackend.DTOs.Tarea
         public Guid CreatedByUsuarioId { get; set; }
         public string CreatedByUsuarioNombre { get; set; } = null!;
 
+        // Evidencia simple (mantener compatibilidad)
         public string? EvidenciaTexto { get; set; }
         public string? EvidenciaImagenUrl { get; set; }
+
+        // NUEVAS PROPIEDADES: Documentos adjuntos y evidencias múltiples
+        public List<DocumentoAdjuntoDTO> DocumentosAdjuntos { get; set; } = new();
+        public List<EvidenciaDTO> Evidencias { get; set; } = new();
 
         // Información de delegación
         public bool EstaDelegada { get; set; }

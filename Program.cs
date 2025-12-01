@@ -29,6 +29,8 @@ builder.Services.AddScoped<IUsuarioService, UsuarioService>();
 builder.Services.AddScoped<ITareaService, TareaService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddControllers();
+builder.Services.AddSingleton<BlobService>();
+
 
 // SignalR with custom UserIdProvider for JWT authentication
 builder.Services.AddSignalR().AddJsonProtocol();

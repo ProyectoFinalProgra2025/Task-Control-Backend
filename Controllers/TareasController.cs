@@ -12,10 +12,12 @@ namespace TaskControlBackend.Controllers
     public class TareasController : BaseController
     {
         private readonly ITareaService _svc;
+        private readonly BlobService _blobService;
 
-        public TareasController(ITareaService svc)
+        public TareasController(ITareaService svc, BlobService blobService)
         {
             _svc = svc;
+            _blobService = blobService;
         }
 
         // POST /api/tareas - crear tarea sin asignar (AdminEmpresa o ManagerDepartamento)
@@ -267,6 +269,194 @@ namespace TaskControlBackend.Controllers
                 success = true, 
                 message = "Delegación rechazada. La tarea regresa al jefe de origen." 
             });
+        }
+
+        // ============================================================
+        // DOCUMENTOS ADJUNTOS
+        // ============================================================
+
+        /// <summary>
+        /// Sube un documento adjunto a una tarea (al crearla o después)
+        /// Solo AdminEmpresa o ManagerDepartamento pueden subir documentos
+        /// </summary>
+        [HttpPost("{id:guid}/documentos")]
+        public async Task<IActionResult> SubirDocumentoAdjunto(Guid id, IFormFile file)
+        {
+            var rol = GetRole();
+            if (rol != RolUsuario.AdminEmpresa && rol != RolUsuario.ManagerDepartamento)
+                return Forbid();
+
+            if (file == null || file.Length == 0)
+                return BadRequest(new { success = false, message = "Archivo vacío" });
+
+            try
+            {
+                var url = await _blobService.UploadTareaDocumentoAsync(file, id);
+                var documento = await _svc.AgregarDocumentoAdjuntoAsync(
+                    GetEmpresaIdOrThrow(),
+                    id,
+                    GetUserId(),
+                    file.FileName,
+                    url,
+                    file.ContentType,
+                    file.Length
+                );
+
+                return Ok(new 
+                { 
+                    success = true, 
+                    message = "Documento adjunto subido exitosamente",
+                    data = documento
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { success = false, message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Obtiene los documentos adjuntos de una tarea
+        /// </summary>
+        [HttpGet("{id:guid}/documentos")]
+        public async Task<IActionResult> GetDocumentosAdjuntos(Guid id)
+        {
+            var documentos = await _svc.GetDocumentosAdjuntosAsync(GetEmpresaIdOrThrow(), id);
+            return SuccessData(documentos);
+        }
+
+        /// <summary>
+        /// Elimina un documento adjunto
+        /// </summary>
+        [HttpDelete("{id:guid}/documentos/{documentoId:guid}")]
+        public async Task<IActionResult> EliminarDocumentoAdjunto(Guid id, Guid documentoId)
+        {
+            try
+            {
+                await _svc.EliminarDocumentoAdjuntoAsync(
+                    GetEmpresaIdOrThrow(),
+                    id,
+                    documentoId,
+                    GetUserId()
+                );
+
+                return Ok(new { success = true, message = "Documento eliminado" });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { success = false, message = ex.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+        }
+
+        // ============================================================
+        // EVIDENCIAS
+        // ============================================================
+
+        /// <summary>
+        /// Agrega una evidencia a una tarea (texto y/o archivo)
+        /// Workers y Managers asignados pueden agregar evidencias
+        /// </summary>
+        [HttpPost("{id:guid}/evidencias")]
+        public async Task<IActionResult> AgregarEvidencia(Guid id, [FromForm] AgregarEvidenciaDTO dto, IFormFile? file)
+        {
+            var rol = GetRole();
+            if (rol != RolUsuario.Usuario && rol != RolUsuario.ManagerDepartamento && rol != RolUsuario.AdminEmpresa)
+                return Forbid();
+
+            // Validar que haya al menos descripción o archivo
+            if (string.IsNullOrWhiteSpace(dto.Descripcion) && (file == null || file.Length == 0))
+                return BadRequest(new { success = false, message = "Debe proporcionar una descripción o un archivo" });
+
+            try
+            {
+                string? archivoUrl = null;
+                string? nombreArchivo = null;
+                string? tipoMime = null;
+                long tamanoBytes = 0;
+
+                if (file != null && file.Length > 0)
+                {
+                    archivoUrl = await _blobService.UploadTareaEvidenciaAsync(file, id);
+                    nombreArchivo = file.FileName;
+                    tipoMime = file.ContentType;
+                    tamanoBytes = file.Length;
+                }
+
+                var evidencia = await _svc.AgregarEvidenciaAsync(
+                    GetEmpresaIdOrThrow(),
+                    id,
+                    GetUserId(),
+                    dto.Descripcion,
+                    nombreArchivo,
+                    archivoUrl,
+                    tipoMime,
+                    tamanoBytes
+                );
+
+                return Ok(new 
+                { 
+                    success = true, 
+                    message = "Evidencia agregada exitosamente",
+                    data = evidencia
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { success = false, message = ex.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
+        }
+
+        /// <summary>
+        /// Obtiene las evidencias de una tarea
+        /// </summary>
+        [HttpGet("{id:guid}/evidencias")]
+        public async Task<IActionResult> GetEvidencias(Guid id)
+        {
+            var evidencias = await _svc.GetEvidenciasAsync(GetEmpresaIdOrThrow(), id);
+            return SuccessData(evidencias);
+        }
+
+        /// <summary>
+        /// Elimina una evidencia
+        /// </summary>
+        [HttpDelete("{id:guid}/evidencias/{evidenciaId:guid}")]
+        public async Task<IActionResult> EliminarEvidencia(Guid id, Guid evidenciaId)
+        {
+            try
+            {
+                await _svc.EliminarEvidenciaAsync(
+                    GetEmpresaIdOrThrow(),
+                    id,
+                    evidenciaId,
+                    GetUserId()
+                );
+
+                return Ok(new { success = true, message = "Evidencia eliminada" });
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return NotFound(new { success = false, message = ex.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
         }
     }
 }
