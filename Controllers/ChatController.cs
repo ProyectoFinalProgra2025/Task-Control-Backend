@@ -14,11 +14,13 @@ namespace TaskControlBackend.Controllers;
 public class ChatController : BaseController
 {
     private readonly IChatService _chatService;
+    private readonly BlobService _blobService;
     private readonly ILogger<ChatController> _logger;
 
-    public ChatController(IChatService chatService, ILogger<ChatController> logger)
+    public ChatController(IChatService chatService, BlobService blobService, ILogger<ChatController> logger)
     {
         _chatService = chatService;
+        _blobService = blobService;
         _logger = logger;
     }
 
@@ -321,7 +323,7 @@ public class ChatController : BaseController
 
             // Validar tipo de archivo
             var contentType = GetContentTypeFromFile(request.File);
-            var allowedTypes = new[] { "image", "document", "audio", "video" };
+            var allowedTypes = new[] { "Image", "Document", "Audio", "Video" };
             if (!allowedTypes.Contains(contentType))
                 return BadRequest(new { message = "Tipo de archivo no permitido" });
 
@@ -329,18 +331,27 @@ public class ChatController : BaseController
             if (request.File.Length > 50 * 1024 * 1024)
                 return BadRequest(new { message = "El archivo excede el tamaño máximo permitido (50MB)" });
 
-            // Por ahora no guardamos el archivo, solo la metadata
-            // TODO: Implementar Azure Blob Storage o similar
-            using var fileStream = request.File.OpenReadStream();
+            // Subir archivo a Azure Blob Storage
+            string fileUrl;
+            try
+            {
+                fileUrl = await _blobService.UploadChatFileAsync(request.File, id);
+                _logger.LogInformation("📎 Archivo subido a blob: {FileUrl}", fileUrl);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
 
             var message = await _chatService.SendFileMessageAsync(
                 userId,
                 id,
                 (MessageContentType)Enum.Parse(typeof(MessageContentType), contentType, true),
                 request.File.FileName,
-                fileStream,
+                fileUrl,
                 request.File.FileName,
                 request.File.ContentType,
+                request.File.Length,
                 string.IsNullOrEmpty(request.ReplyToMessageId) ? null : Guid.Parse(request.ReplyToMessageId));
 
             var messageDto = new
@@ -351,6 +362,7 @@ public class ChatController : BaseController
                 senderName = message.Sender?.NombreCompleto ?? "",
                 contentType = message.ContentType.ToString(),
                 content = message.Content,
+                fileUrl = message.FileUrl,
                 fileName = message.FileName,
                 fileSizeBytes = message.FileSizeBytes,
                 fileMimeType = message.FileMimeType,

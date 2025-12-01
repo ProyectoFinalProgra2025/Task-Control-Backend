@@ -87,6 +87,15 @@ public class BlobService
     }
 
     /// <summary>
+    /// Sube un archivo de chat (imágenes, documentos, audio, video)
+    /// </summary>
+    public async Task<string> UploadChatFileAsync(IFormFile file, Guid conversationId)
+    {
+        ValidateChatFile(file);
+        return await UploadFileAsync(file, $"chat/{conversationId}");
+    }
+
+    /// <summary>
     /// Elimina un blob por su URL
     /// </summary>
     public async Task<bool> DeleteBlobAsync(string blobUrl)
@@ -180,5 +189,31 @@ public class BlobService
         // Límite de 10MB para CSV
         if (file.Length > 10 * 1024 * 1024)
             throw new ArgumentException("El archivo CSV excede el tamaño máximo permitido de 10MB");
+    }
+
+    /// <summary>
+    /// Valida que el archivo sea válido para chat (imágenes, documentos, audio, video)
+    /// </summary>
+    private void ValidateChatFile(IFormFile file)
+    {
+        var allowedExtensions = new[] 
+        { 
+            // Imágenes
+            ".jpg", ".jpeg", ".png", ".gif", ".webp",
+            // Documentos
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt",
+            // Audio
+            ".mp3", ".wav", ".ogg", ".m4a",
+            // Video
+            ".mp4", ".avi", ".mov", ".wmv", ".mkv"
+        };
+
+        var extension = Path.GetExtension(file.FileName).ToLower();
+        if (!allowedExtensions.Contains(extension))
+            throw new ArgumentException($"Tipo de archivo no permitido para chat. Extensiones permitidas: imágenes, documentos, audio y video.");
+
+        // Límite de 50MB para archivos de chat
+        if (file.Length > 50 * 1024 * 1024)
+            throw new ArgumentException("El archivo excede el tamaño máximo permitido de 50MB");
     }
 }
